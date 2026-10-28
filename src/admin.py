@@ -2,7 +2,9 @@
 (só ``<raiz>/ADMIN``)."""
 
 import io
+import os
 import re
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
@@ -135,8 +137,11 @@ def _agents_page(new_agent_token=None, status=200):
                               (SELECT count(*) FROM db_connections WHERE agent_id = a.id) AS connections,
                               (SELECT count(*) FROM reports WHERE agent_id = a.id) AS reports
                        FROM agents a ORDER BY name""")
+    # O .env mostrado ao criar um agente: a porta dos agentes (agent-api), não o URL da interface
+    agent_url = os.getenv('AGENT_API_URL', '').rstrip('/') or request.url_root.rstrip('/')
     return render_template('admin/agents.html', page='agents', agents=rows, new_token=new_agent_token,
-                           app_url=request.url_root.rstrip('/')), status
+                           agent_url=agent_url, agent_host=urlparse(agent_url).hostname,
+                           agent_ip=os.getenv('AGENT_API_IP', '')), status
 
 
 @bp.route('/agentes', methods=['GET', 'POST'])

@@ -279,6 +279,8 @@ class WebTest(unittest.TestCase):
         source, channel = self.make_source_and_channel()
         page = self.client.post('/admin/agentes', data={'name': 'zproxy15'}).get_data(as_text=True)
         token = re.search(r'rta_[\w-]+', page)[0]
+        self.assertIn('AGENT_HOSTNAME=zproxy15', page)
+        self.assertIn('NO_PROXY=localhost', page)  # sem AGENT_API_URL usa o URL da app
         self.assertNotIn(token, json.dumps(db.query('SELECT * FROM agents'), default=str))
         info = psycopg.conninfo.conninfo_to_dict(os.environ['DATABASE_URL'])
         agent_id = db.one("SELECT id FROM agents WHERE name = 'zproxy15'")['id']

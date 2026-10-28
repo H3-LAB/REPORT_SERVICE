@@ -11,13 +11,18 @@
                 <section class="card token-card">
                     <div class="card-head"><h3>Token do agente {{ new_token.agent }}</h3><p>Copie agora: não volta a ser mostrado. Se o perder, gere um novo.</p></div>
                     <pre class="code-block">{{ new_token.token }}</pre>
-                    <p class="muted">No servidor do agente, no <code>.env</code> ao lado do <code>docker-compose.yml</code>:</p>
-                    <pre class="code-block">REPORT_SERVICE_URL={{ app_url }}
+                    <p class="muted">Na máquina do agente, no <code>.env</code> ao lado do <code>docker-compose.yml</code> do agente:</p>
+                    <pre class="code-block">REPORT_SERVICE_URL={{ agent_url }}
+REPORT_SERVICE_IP={{ agent_ip or '<ip do servidor>' }}
 AGENT_TOKEN={{ new_token.token }}
+AGENT_HOSTNAME={{ new_token.agent }}
 # Só se este agente puder correr scripts definidos na app
 ALLOW_SCRIPTS=false
-# Se a máquina sai pelo proxy
-HTTPS_PROXY=</pre>
+# A ligação ao servidor é direta, sem proxy
+HTTPS_PROXY=
+NO_PROXY={{ agent_host }}
+# Vazio com o certificado da Sectigo; só para uma CA interna
+CA_BUNDLE=</pre>
                 </section>
                 {% endif %}
 

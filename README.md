@@ -63,8 +63,9 @@ Nome: `report-service.corp.multicert.com`, só usado pelos agentes (não precisa
    sudo chown 10001 certs/server.key && chmod 600 certs/server.key   # o contentor corre com o utilizador 10001
    ```
    Sem os intermédios no `server.crt`, os agentes recusam a ligação. Teste: `curl https://report-service.corp.multicert.com:10050/health --resolve report-service.corp.multicert.com:10050:<ip>`.
-3. Firewall do servidor: abrir a 10050 só aos IPs dos agentes.
-4. Nos agentes (`agent/.env`): `REPORT_SERVICE_URL=https://report-service.corp.multicert.com:10050`, `REPORT_SERVICE_IP=<ip do servidor>` e, se usam proxy, o nome em `NO_PROXY`.
+3. No `.env` do servidor: `AGENT_API_URL=https://report-service.corp.multicert.com:10050` e `AGENT_API_IP=<ip do servidor>`, para o `.env` que aparece ao criar um agente já vir certo.
+4. Firewall do servidor: abrir a 10050 só aos IPs dos agentes.
+5. Nos agentes (`agent/.env`): `REPORT_SERVICE_URL=https://report-service.corp.multicert.com:10050`, `REPORT_SERVICE_IP=<ip do servidor>` e, se usam proxy, o nome em `NO_PROXY`.
 
 Quando renovar o wildcard no nginx, copie-o de novo para `certs/` e faça `docker compose restart agent-api`.
 
