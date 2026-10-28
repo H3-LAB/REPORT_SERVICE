@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Logos{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header"><h1>Logos</h1><p>Cada report escolhe o seu logo para o cabeçalho do PDF. PNG ou JPG até 1 MB.</p></div>
+                <div class="settings-grid">
+                    <section class="card span-2">
+                        <div class="logo-grid">
+                        {% for l in logos %}
+                            <figure class="logo-item">
+                                <div class="logo-preview"><img src="{{ url_for('admin.logo_image', logo_id=l.id) }}" alt="{{ l.name }}"></div>
+                                <figcaption><strong>{{ l.name }}</strong><small>{{ (l.size / 1024) | round(1) }} KB · {{ l.reports }} reports</small></figcaption>
+                                <form method="post" action="{{ url_for('admin.logo_delete', logo_id=l.id) }}" data-confirm="Apagar o logo? Os reports que o usam ficam sem logo."><button class="btn btn-outline btn-sm" type="submit">Apagar</button></form>
+                            </figure>
+                        {% else %}
+                            <p class="empty">Nenhum logo.</p>
+                        {% endfor %}
+                        </div>
+                    </section>
+                    <form method="post" enctype="multipart/form-data" class="card form">
+                        <div class="card-head"><h3>Carregar logo</h3></div>
+                        <label class="field"><span class="label">Nome</span><input name="name" maxlength="100" required placeholder="SIBS Multicert"></label>
+                        <label class="field"><span class="label">Imagem</span><input type="file" name="file" accept="image/png,image/jpeg" required></label>
+                        <div class="form-actions"><button type="submit" class="btn btn-primary btn-sm">Carregar</button></div>
+                    </form>
+                </div>
+            </section>
+{% endblock %}

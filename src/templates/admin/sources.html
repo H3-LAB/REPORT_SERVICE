@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Fontes de dados{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>Fontes de dados</h1><p>De onde os reports leem os painéis. O token fica cifrado e não volta a ser mostrado.</p></div>
+                    <a class="btn btn-primary btn-sm" href="{{ url_for('admin.source_form') }}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova fonte</a>
+                </div>
+                <section class="card">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Nome</th><th>Tipo</th><th>URL base</th><th>Fuso</th><th>Reports</th><th></th></tr></thead>
+                            <tbody>
+                            {% for s in sources %}
+                                <tr>
+                                    <td><a href="{{ url_for('admin.source_form', source_id=s.id) }}"><strong>{{ s.name }}</strong></a></td>
+                                    <td>{{ kinds[s.kind][0] }}</td>
+                                    <td><code>{{ s.base_url }}</code>{% if not s.verify_tls %} <span class="pill pill-warn">TLS não verificado</span>{% endif %}</td>
+                                    <td>{{ s.timezone }}</td>
+                                    <td>{{ s.reports }}</td>
+                                    <td><div class="row-actions"><button type="button" class="btn btn-outline btn-sm" data-test-url="{{ url_for('admin.source_test', source_id=s.id) }}">Testar</button><a class="btn btn-outline btn-sm" href="{{ url_for('admin.source_form', source_id=s.id) }}">Editar</a></div></td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="6" class="empty">Nenhuma fonte. Crie a do Grafana em "Nova fonte".</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

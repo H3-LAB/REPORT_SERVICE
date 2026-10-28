@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ source.name or 'Nova fonte' }}{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>{{ source.name or 'Nova fonte' }}</h1><p><a href="{{ url_for('admin.sources') }}">Fontes de dados</a></p></div>
+                    {% if source.id %}
+                    <div class="row-actions">
+                        <button type="button" class="btn btn-outline btn-sm" data-test-url="{{ url_for('admin.source_test', source_id=source.id) }}">Testar ligação</button>
+                        <form method="post" action="{{ url_for('admin.source_delete', source_id=source.id) }}" data-confirm="Apagar esta fonte?"><button class="btn btn-danger btn-sm" type="submit">Apagar</button></form>
+                    </div>
+                    {% endif %}
+                </div>
+                <form method="post" class="card narrow-card form" autocomplete="off">
+                    <label class="field"><span class="label">Nome</span><input name="name" value="{{ source.name or '' }}" maxlength="100" required></label>
+                    <label class="field"><span class="label">Tipo</span>
+                        <select name="kind">{% for key, (label, _) in kinds.items() %}<option value="{{ key }}"{% if key == source.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                    </label>
+                    <label class="field"><span class="label">URL base</span><input type="url" name="base_url" value="{{ source.base_url or '' }}" placeholder="http://monit02.multicert.corp:4001/grafana_reports" required>
+                        <small>O endereço do Grafana, sem /render nem /d: os caminhos da API e do render são acrescentados.</small></label>
+                    <label class="field"><span class="label">Token de service account</span><input type="password" name="token" placeholder="{{ 'Guardado. Deixe vazio para manter.' if source.id else 'glsa_…' }}" autocomplete="new-password">
+                        <small>No Grafana: Administration → Service accounts, papel Viewer.</small></label>
+                    <div class="field-row-2">
+                        <label class="field"><span class="label">Org ID</span><input type="number" name="org_id" value="{{ source.org_id }}" min="1"></label>
+                        <label class="field"><span class="label">Fuso horário</span><input name="timezone" value="{{ source.timezone }}" placeholder="Europe/Lisbon"></label>
+                    </div>
+                    <label class="switch-row"><input type="checkbox" name="verify_tls" value="1"{% if source.verify_tls %} checked{% endif %}><span>Verificar o certificado TLS</span></label>
+                    <div class="form-actions"><button type="submit" class="btn btn-primary btn-sm">Guardar</button></div>
+                </form>
+            </section>
+{% endblock %}

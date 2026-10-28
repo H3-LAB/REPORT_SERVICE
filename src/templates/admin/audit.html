@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Auditoria{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header"><h1>Auditoria</h1><p>Quem criou, alterou, executou ou apagou o quê. As 500 entradas mais recentes.</p></div>
+                <section class="card">
+                    <form class="search-row" method="get">
+                        <input type="search" name="q" value="{{ search }}" placeholder="Procurar por utilizador, ação ou report" aria-label="Procurar">
+                        <button type="submit" class="btn btn-outline btn-sm">Procurar</button>
+                    </form>
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Data</th><th>Utilizador</th><th>Ação</th><th>Alvo</th><th>Detalhe</th></tr></thead>
+                            <tbody>
+                            {% for row in rows %}
+                                <tr><td class="nowrap">{{ row.at | dt }}</td><td>{{ row.username }}</td><td>{{ row.action }}</td><td>{{ row.target }}</td><td>{{ row.detail }}</td></tr>
+                            {% else %}
+                                <tr><td colspan="5" class="empty">{{ 'Nada encontrado.' if search else 'Ainda sem registos.' }}</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

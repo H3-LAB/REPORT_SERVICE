@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Canais{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>Canais</h1><p>Por onde os reports são enviados. Passwords e tokens ficam cifrados.</p></div>
+                    <div class="row-actions">
+                        {% for key, label in kinds.items() %}<a class="btn btn-outline btn-sm" href="{{ url_for('admin.channel_form', tipo=key) }}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>{{ label }}</a>{% endfor %}
+                    </div>
+                </div>
+                <section class="card">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Nome</th><th>Tipo</th><th>Destino técnico</th><th>Reports</th><th></th></tr></thead>
+                            <tbody>
+                            {% for c in channels %}
+                                <tr>
+                                    <td><a href="{{ url_for('admin.channel_form', channel_id=c.id) }}"><strong>{{ c.name }}</strong></a></td>
+                                    <td>{{ kinds[c.kind] }}</td>
+                                    <td><code>{{ c.config.host and c.config.host ~ ':' ~ c.config.port or c.config.endpoint or c.config.api_url }}</code></td>
+                                    <td>{{ c.reports }}</td>
+                                    <td><div class="row-actions"><a class="btn btn-outline btn-sm" href="{{ url_for('admin.channel_form', channel_id=c.id) }}">Editar</a></div></td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="5" class="empty">Nenhum canal. Crie um com os botões acima.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

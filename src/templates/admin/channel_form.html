@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ channel.name or 'Novo canal' }}{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>{{ channel.name or 'Novo canal' }}</h1><p><a href="{{ url_for('admin.channels') }}">Canais</a> · {{ kinds[channel.kind] }}</p></div>
+                    {% if channel.id %}
+                    <form method="post" action="{{ url_for('admin.channel_delete', channel_id=channel.id) }}" data-confirm="Apagar este canal?"><button class="btn btn-danger btn-sm" type="submit">Apagar</button></form>
+                    {% endif %}
+                </div>
+                <div class="settings-grid">
+                    <form method="post" class="card form" autocomplete="off">
+                        <input type="hidden" name="kind" value="{{ channel.kind }}">
+                        <label class="field"><span class="label">Nome</span><input name="name" value="{{ channel.name or '' }}" maxlength="100" required></label>
+                        {% for field, label, input_type, required in fields[channel.kind] %}
+                        {% if input_type == 'checkbox' %}
+                        <label class="switch-row"><input type="checkbox" name="{{ field }}" value="1"{% if channel.config[field] %} checked{% endif %}><span>{{ label }}</span></label>
+                        {% else %}
+                        <label class="field"><span class="label">{{ label }}</span><input type="{{ input_type }}" name="{{ field }}" value="{{ channel.config[field] if channel.config[field] is not none else '' }}"{% if required %} required{% endif %}></label>
+                        {% endif %}
+                        {% endfor %}
+                        {% if secrets[channel.kind] %}
+                        <label class="field"><span class="label">{{ secrets[channel.kind] }}</span><input type="password" name="secret" placeholder="{{ 'Guardado. Deixe vazio para manter.' if channel.id else '' }}" autocomplete="new-password"></label>
+                        {% endif %}
+                        <div class="form-actions"><button type="submit" class="btn btn-primary btn-sm">Guardar</button></div>
+                    </form>
+                    {% if channel.id %}
+                    <section class="card">
+                        <div class="card-head"><h3>Enviar teste</h3><p>Envia uma mensagem com um anexo pequeno (teste.txt).</p></div>
+                        <form id="channel-test" class="form" data-url="{{ url_for('admin.channel_test', channel_id=channel.id) }}">
+                            {% if channel.kind == 'telegram' %}
+                            <label class="field"><span class="label">chat_id</span><input name="chat_id" placeholder="-1001234567890" required></label>
+                            <label class="field"><span class="label">ID do tópico (opcional)</span><input name="topic_id" placeholder="42"></label>
+                            {% else %}
+                            <label class="field"><span class="label">E-mail</span><input type="email" name="to" required></label>
+                            {% endif %}
+                            <div class="form-actions"><button type="submit" class="btn btn-outline btn-sm">Enviar teste</button></div>
+                        </form>
+                    </section>
+                    {% endif %}
+                </div>
+            </section>
+{% endblock %}

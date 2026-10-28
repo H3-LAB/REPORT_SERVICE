@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Execuções{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header">
+                    <h1>Execuções</h1>
+                    <p>As 200 mais recentes{% if report_id %} deste report · <a href="{{ url_for('runs') }}">ver todas</a>{% endif %}. Os ficheiros ficam guardados durante o período de retenção.</p>
+                </div>
+                <section class="card">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>#</th><th>Report</th><th>Origem</th><th>Estado</th><th>Pedido</th><th>Duração</th><th>Ficheiro</th></tr></thead>
+                            <tbody>
+                            {% for u in runs %}
+                                <tr>
+                                    <td><a href="{{ url_for('run_detail', run_id=u.id) }}">#{{ u.id }}</a></td>
+                                    <td><a href="{{ url_for('runs', report=u.report_id) }}">{{ u.report_name }}</a><small class="sub">{{ u.team }}</small></td>
+                                    <td>{{ u.trigger }}{% if u.requested_by %}<small class="sub">{{ u.requested_by }}</small>{% endif %}</td>
+                                    <td><a class="pill {{ status_class[u.status] }}" href="{{ url_for('run_detail', run_id=u.id) }}">{{ u.status }}</a></td>
+                                    <td>{{ u.created_at | dt }}</td>
+                                    <td>{% if u.finished_at and u.started_at %}{{ '%.0f' | format((u.finished_at - u.started_at).total_seconds()) }} s{% else %}-{% endif %}</td>
+                                    <td>{% if u.has_file %}<a href="{{ url_for('run_download', run_id=u.id) }}">{{ u.file_name }}</a>{% else %}<span class="muted">{{ u.file_name and 'Expirado' or '-' }}</span>{% endif %}</td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="7" class="empty">Ainda não há execuções.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

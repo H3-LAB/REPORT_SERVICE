@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ report.name or 'Novo report' }}{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div>
+                        <h1>{{ report.name or 'Novo report' }}</h1>
+                        <p>{% if report.id %}Equipa {{ report.team }} · <a href="{{ url_for('runs', report=report.id) }}">execuções</a>{% else %}Fonte, dashboard, painéis, período, agendamento e destinatários.{% endif %}</p>
+                    </div>
+                    {% if report.id %}
+                    <div class="row-actions">
+                        <form method="post" action="{{ url_for('report_run', report_id=report.id) }}" data-confirm="Gerar e enviar agora a todos os destinatários?"><button class="btn btn-outline btn-sm" type="submit">Executar agora</button></form>
+                        <form method="post" action="{{ url_for('report_duplicate', report_id=report.id) }}"><button class="btn btn-outline btn-sm" type="submit">Duplicar</button></form>
+                        <form method="post" action="{{ url_for('report_delete', report_id=report.id) }}" data-confirm="Apagar o report e todas as suas execuções?"><button class="btn btn-danger btn-sm" type="submit">Apagar</button></form>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <form id="report-form" method="post" class="settings-grid" novalidate>
+                    <input type="hidden" name="variables" id="f-variables">
+                    <input type="hidden" name="panels" id="f-panels">
+                    <input type="hidden" name="recipients" id="f-recipients">
+
+                    <section class="card">
+                        <div class="card-head"><h3>Geral</h3><p>O título aparece no cabeçalho do PDF; sem título usa o nome.</p></div>
+                        <div class="form">
+                            <label class="field"><span class="label">Nome</span><input name="name" value="{{ report.name or '' }}" maxlength="120" required></label>
+                            <label class="field"><span class="label">Equipa</span>
+                                {% if acc.admin %}
+                                <input name="team" value="{{ report.team }}" list="team-list" maxlength="40" required pattern="[A-Za-z0-9_-]+">
+                                <datalist id="team-list">{% for t in teams %}<option value="{{ t }}">{% endfor %}</datalist>
+                                {% else %}
+                                <select name="team">{% for t in teams %}<option{% if t == report.team %} selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+                                {% endif %}
+                            </label>
+                            <label class="field"><span class="label">Título no PDF</span><input name="title" value="{{ report.title or '' }}" maxlength="200"></label>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <div class="card-head"><h3>Fonte e dashboard</h3><p>Lista lida da fonte de dados. Procure pelo nome do dashboard.</p></div>
+                        <div class="form">
+                            <label class="field"><span class="label">Fonte de dados</span>
+                                <select name="source_id" id="f-source">
+                                    {% for s in sources %}<option value="{{ s.id }}"{% if s.id == report.source_id %} selected{% endif %}>{{ s.name }}</option>{% else %}<option value="">Nenhuma fonte: peça a um admin para criar</option>{% endfor %}
+                                </select>
+                            </label>
+                            <input type="hidden" name="dashboard_uid" id="f-uid" value="{{ report.dashboard_uid or '' }}">
+                            <input type="hidden" name="dashboard_slug" id="f-slug" value="{{ report.dashboard_slug or '_' }}">
+                            <input type="hidden" name="dashboard_title" id="f-title" value="{{ report.dashboard_title or '' }}">
+                            <div class="field">
+                                <span class="label">Dashboard</span>
+                                <div class="search-row">
+                                    <input type="search" id="dash-search" placeholder="Procurar dashboard…" autocomplete="off">
+                                    <button type="button" id="dash-search-btn" class="btn btn-outline btn-sm">Procurar</button>
+                                </div>
+                                <ul id="dash-results" class="pick-list" hidden></ul>
+                                <p id="dash-current" class="selected-line">{% if report.dashboard_uid %}<strong>{{ report.dashboard_title or report.dashboard_uid }}</strong> <small>({{ report.dashboard_uid }})</small>{% else %}<span class="muted">Nenhum dashboard escolhido.</span>{% endif %}</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="card span-2">
+                        <div class="card-head"><h3>Painéis</h3><p>Marque os painéis e ordene-os: a ordem é a do PDF. Um painel pode ter um período diferente do report (ex. diário, semanal e mensal no mesmo PDF).</p></div>
+                        <div class="panels-grid">
+                            <div>
+                                <span class="label">Disponíveis</span>
+                                <ul id="panels-available" class="pick-list checks"><li class="muted">Escolha um dashboard.</li></ul>
+                            </div>
+                            <div>
+                                <span class="label">No report (<span id="panels-count">0</span>)</span>
+                                <ol id="panels-selected" class="pick-list ordered"></ol>
+                            </div>
+                        </div>
+                        <div id="variables-box" class="form" hidden>
+                            <span class="label">Variáveis do dashboard</span>
+                            <div id="variables" class="variables-grid"></div>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <div class="card-head"><h3>Período e formato</h3><p>As datas contam no fuso horário da fonte de dados.</p></div>
+                        <div class="form">
+                            <label class="field"><span class="label">Período</span>
+                                <select name="period">{% for key, label in periods.items() %}<option value="{{ key }}"{% if key == report.period %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                            </label>
+                            <div class="field-row-2">
+                                <label class="field"><span class="label">Formato</span>
+                                    <select name="output" id="f-output"><option value="pdf"{% if report.output == 'pdf' %} selected{% endif %}>PDF</option><option value="zip"{% if report.output == 'zip' %} selected{% endif %}>ZIP com os PNG</option></select>
+                                </label>
+                                <label class="field"><span class="label">Tema dos painéis</span>
+                                    <select name="theme"><option value="light"{% if report.theme == 'light' %} selected{% endif %}>Claro</option><option value="dark"{% if report.theme == 'dark' %} selected{% endif %}>Escuro</option></select>
+                                </label>
+                            </div>
+                            <div class="field-row-2 pdf-only">
+                                <label class="field"><span class="label">Painéis por página</span>
+                                    <select name="per_page"><option value="1"{% if report.per_page == 1 %} selected{% endif %}>1</option><option value="2"{% if report.per_page == 2 %} selected{% endif %}>2</option></select>
+                                </label>
+                                <label class="field"><span class="label">Orientação (A4)</span>
+                                    <select name="orientation"><option value="portrait"{% if report.orientation == 'portrait' %} selected{% endif %}>Vertical</option><option value="landscape"{% if report.orientation == 'landscape' %} selected{% endif %}>Horizontal</option></select>
+                                </label>
+                            </div>
+                            <label class="field pdf-only"><span class="label">Logo</span>
+                                <select name="logo_id"><option value="">Sem logo</option>{% for l in logos %}<option value="{{ l.id }}"{% if l.id == report.logo_id %} selected{% endif %}>{{ l.name }}</option>{% endfor %}</select>
+                            </label>
+                            <div class="field-row-2">
+                                <label class="field"><span class="label">Largura do painel (px)</span><input type="number" name="panel_width" value="{{ report.panel_width }}" min="400" max="4000"></label>
+                                <label class="field"><span class="label">Altura do painel (px)</span><input type="number" name="panel_height" value="{{ report.panel_height }}" min="300" max="4000"></label>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <div class="card-head"><h3>Agendamento</h3><p>Hora de Lisboa. Só os reports ativos são enviados automaticamente.</p></div>
+                        <div class="form">
+                            {% set sched = report.schedule or {} %}
+                            <label class="field"><span class="label">Frequência</span>
+                                <select name="schedule_freq" id="f-freq"><option value="">Sem agendamento</option>{% for key, label in frequencies.items() %}<option value="{{ key }}"{% if sched.freq == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                            </label>
+                            <div class="field-row-2 sched">
+                                <label class="field"><span class="label">Hora</span><input type="time" name="schedule_time" value="{{ sched.time or '08:00' }}"></label>
+                                <label class="field sched-weekly"><span class="label">Dia da semana</span>
+                                    <select name="schedule_weekday">{% for d in weekdays %}<option value="{{ loop.index0 }}"{% if sched.weekday == loop.index0 %} selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+                                </label>
+                                <label class="field sched-monthly"><span class="label">Dia do mês</span><input type="number" name="schedule_day" value="{{ sched.day or 1 }}" min="1" max="28"></label>
+                            </div>
+                            <label class="switch-row sched"><input type="checkbox" name="active" value="1"{% if report.active %} checked{% endif %}><span>Ativo: enviar automaticamente</span></label>
+                        </div>
+                    </section>
+
+                    <section class="card span-2">
+                        <div class="card-head card-head-row">
+                            <div><h3>Destinatários</h3><p>Por canal: e-mails (Para e Cc) ou Telegram (chat e, num grupo com tópicos, o ID do tópico).</p></div>
+                            <button type="button" id="add-recipient" class="btn btn-outline btn-sm"{% if not channels %} disabled title="Nenhum canal: peça a um admin para criar"{% endif %}>
+                                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Adicionar
+                            </button>
+                        </div>
+                        <div id="recipients" class="recipients"></div>
+                        <div class="form">
+                            <label class="field"><span class="label">Assunto (e-mail) / legenda (Telegram)</span><input name="subject" value="{{ report.subject or '' }}" maxlength="200" placeholder="Por defeito, o título do report"></label>
+                            <label class="field"><span class="label">Mensagem</span><textarea name="message" rows="3" maxlength="2000" placeholder="Report em anexo.">{{ report.message or '' }}</textarea></label>
+                        </div>
+                    </section>
+
+                    <div class="form-actions span-2">
+                        <button type="submit" name="then" value="preview" class="btn btn-outline btn-sm">Guardar e pré-visualizar</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+                    </div>
+                </form>
+
+                {% if report.id %}
+                <section id="preview" class="card" hidden>
+                    <div class="card-head card-head-row"><h3>Pré-visualização</h3><a id="preview-download" class="btn btn-outline btn-sm" hidden>Descarregar</a></div>
+                    <ol id="preview-log" class="op-log" hidden></ol>
+                    <iframe id="preview-frame" class="preview-frame" title="Pré-visualização do PDF" hidden></iframe>
+                </section>
+                {% endif %}
+            </section>
+{% endblock %}
+{% block scripts %}
+<script id="report-data" type="application/json">{{ {
+    'variables': report.variables or {},
+    'panels': panels,
+    'recipients': recipients,
+    'channels': channels,
+    'periods': periods,
+    'dashboardsUrl': url_for('api_dashboards', source_id=0) | replace('/0/dashboards', ''),
+    'previewUrl': url_for('report_preview', report_id=report.id) if report.id else None,
+    'autoPreview': request.args.get('preview') == '1',
+} | tojson }}</script>
+{% endblock %}

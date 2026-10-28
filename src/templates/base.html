@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Reports{% endblock %} · Reporting Tool</title>
+    <script>
+        // Mesmo tema das outras apps: chave "theme", ou a preferência do sistema
+        try {
+            const saved = localStorage.getItem("theme");
+            const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+            document.documentElement.classList.toggle("dark", dark);
+        } catch (e) {}
+    </script>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=app_version) }}">
+    {# Cor de realce do admin (validada como #rrggbb); sem ela fica o azul do app.css #}
+    {% if theme %}<style>:root, .dark { --brand-from: {{ theme.from }}; --brand-to: {{ theme.to }}; --primary: {{ theme.hsl }}; --ring: {{ theme.hsl }}; }</style>{% endif %}
+</head>
+<body>
+<div class="shell">
+    <aside id="sidebar" class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon">
+                <svg viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+            </div>
+            <div>
+                <h1>REPORTING TOOL</h1>
+                <p>Reports agendados</p>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            {% if acc %}
+            <a href="{{ url_for('reports') }}" class="nav-item{% if page == 'reports' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 18v-2M12 18v-5M16 18v-3"/></svg>
+                <span>Reports</span>
+            </a>
+            <a href="{{ url_for('runs') }}" class="nav-item{% if page == 'runs' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+                <span>Execuções</span>
+            </a>
+            {% endif %}
+            {% if acc and acc.admin %}
+            <p class="nav-section">Administração</p>
+            <a href="{{ url_for('admin.sources') }}" class="nav-item{% if page == 'sources' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+                <span>Fontes de dados</span>
+            </a>
+            <a href="{{ url_for('admin.channels') }}" class="nav-item{% if page == 'channels' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                <span>Canais</span>
+            </a>
+            <a href="{{ url_for('admin.logos') }}" class="nav-item{% if page == 'logos' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>
+                <span>Logos</span>
+            </a>
+            <a href="{{ url_for('admin.settings') }}" class="nav-item{% if page == 'settings' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span>Configurações</span>
+            </a>
+            <a href="{{ url_for('admin.audit') }}" class="nav-item{% if page == 'audit' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8M16 13H8M16 17H8"/></svg>
+                <span>Auditoria</span>
+            </a>
+            {% endif %}
+        </nav>
+    </aside>
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+    <div class="main">
+        <header class="topbar">
+            <button id="menuToggle" class="icon-btn menu-btn" type="button" aria-label="Abrir menu">
+                <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <a class="topbar-logo" href="{{ url_for('reports') }}">
+                <img src="{{ url_for('static', filename='images/sibs_mtc.png') }}" alt="SIBS Multicert">
+            </a>
+            <div class="topbar-actions">
+                {% if user %}
+                <div class="user-info">
+                    <span class="avatar">{{ (user.name or user.email or '?')[:1] | upper }}</span>
+                    <span class="user-text">
+                        <strong>{{ user.name }}</strong>
+                        <small>{{ user.email }}{% if acc %} · {{ 'Admin' if acc.admin else acc.teams | join(', ') }}{% endif %}</small>
+                    </span>
+                </div>
+                {% endif %}
+                <button id="themeToggle" class="icon-btn" type="button" aria-label="Alternar tema">
+                    <svg id="iconMoon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                    <svg id="iconSun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                </button>
+                {% if user and not config.AUTH_DISABLED %}
+                <a class="btn-ghost" href="{{ url_for('auth.logout') }}">
+                    <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+                    <span>Sair</span>
+                </a>
+                {% endif %}
+            </div>
+        </header>
+
+        <main class="content">
+            {# data-page: o padding que tira o conteúdo de baixo do cabeçalho fixo #}
+            <div data-page="{{ page or 'pagina' }}">
+{% block content %}{% endblock %}
+            </div>
+        </main>
+
+        <footer class="footer">
+            <div class="footer-brand">
+                <div class="footer-icon">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                </div>
+                <span>REPORTING TOOL</span>
+            </div>
+            <p>© <span id="year"></span> - Powered by: PSS · v{{ app_version }}</p>
+        </footer>
+    </div>
+</div>
+<div id="page-busy" class="busy" hidden role="status" aria-live="polite">
+    <div class="busy-box"><span class="busy-spinner" aria-hidden="true"></span><span id="page-busy-text">A carregar…</span></div>
+</div>
+<div id="toasts" class="toasts" aria-live="polite">
+    {% for kind, message in get_flashed_messages(with_categories=true) %}<div class="toast toast-{{ 'error' if kind == 'error' else 'success' }}" data-flash>{{ message }}</div>{% endfor %}
+</div>
+{% block scripts %}{% endblock %}
+<script src="{{ url_for('static', filename='js/app.js', v=app_version) }}"></script>
+</body>
+</html>

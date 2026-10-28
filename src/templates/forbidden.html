@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Sem acesso{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header">
+                    <h1>Sem acesso</h1>
+                </div>
+                <section class="card narrow-card">
+                    {% if error %}
+                    <p>{{ error }}</p>
+                    {% else %}
+                    <p>A conta <strong>{{ denied.email or denied.name }}</strong> não pertence a nenhum grupo de <code>{{ root }}</code> (<code>{{ root }}/OPERADOR</code>, <code>{{ root }}/ADMIN</code> ou uma equipa){% if denied.groups %}. Grupos recebidos: {{ denied.groups | join(', ') }}{% endif %}.</p>
+                    <p>Peça acesso a um administrador do Keycloak e volte a entrar.</p>
+                    {% endif %}
+                    <div class="form-actions">
+                        <a class="btn btn-outline btn-sm" href="{{ url_for('auth.logout') }}">Sair e entrar com outra conta</a>
+                        <a class="btn btn-primary btn-sm" href="{{ url_for('auth.login') }}">Entrar de novo</a>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

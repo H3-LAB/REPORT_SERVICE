@@ -1,0 +1,43 @@
+# REPORTING TOOL: base de dados, web e scheduler (um só: é ele que envia os reports agendados).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reporting
+      POSTGRES_USER: reporting
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - reporting-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reporting -d reporting"]
+      interval: 10s
+      retries: 6
+
+  web:
+    image: ghcr.io/h3-lab/reporting-tool:${REPORTING_VERSION:-1.0.0}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://reporting:${POSTGRES_PASSWORD}@db:5432/reporting
+    ports:
+      - "${REPORTING_PORT:-8090}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  scheduler:
+    image: ghcr.io/h3-lab/reporting-tool:${REPORTING_VERSION:-1.0.0}
+    restart: unless-stopped
+    command: ["python", "scheduler.py"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://reporting:${POSTGRES_PASSWORD}@db:5432/reporting
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  reporting-db:

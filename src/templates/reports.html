@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div>
+                        <h1>Reports</h1>
+                        <p>{{ 'Reports de todas as equipas.' if acc.admin else 'Reports da equipa ' ~ acc.teams | join(', ') ~ '.' }}</p>
+                    </div>
+                    <a class="btn btn-primary btn-sm" href="{{ url_for('report_form') }}">
+                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                        Novo report
+                    </a>
+                </div>
+
+                <section class="card">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Report</th><th>Equipa</th><th>Período</th><th>Agendamento</th><th>Próxima</th><th>Última execução</th><th></th></tr></thead>
+                            <tbody>
+                            {% for r in reports %}
+                                <tr>
+                                    <td><a href="{{ url_for('report_form', report_id=r.id) }}"><strong>{{ r.name }}</strong></a><small class="sub">{{ r.dashboard_title or r.dashboard_uid }}</small><small class="sub">{{ r.source_name }}</small></td>
+                                    <td><span class="badge">{{ r.team }}</span></td>
+                                    <td>{{ periods[r.period] }}</td>
+                                    <td>{% if r.active %}{{ describe_schedule(r.schedule) }}{% else %}<span class="muted">Inativo</span>{% endif %}</td>
+                                    <td>{{ r.next_run_at | dt if r.active else '-' }}</td>
+                                    <td>{% if r.last_run %}<a class="pill {{ status_class[r.last_run.status] }}" href="{{ url_for('run_detail', run_id=r.last_run.id) }}">{{ r.last_run.status }}</a>{% else %}<span class="muted">Nunca</span>{% endif %}</td>
+                                    <td>
+                                        <div class="row-actions">
+                                            <form method="post" action="{{ url_for('report_run', report_id=r.id) }}"><button class="btn btn-outline btn-sm" type="submit" title="Gerar e enviar agora">Executar</button></form>
+                                            <a class="btn btn-outline btn-sm" href="{{ url_for('report_form', report_id=r.id) }}">Editar</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="7" class="empty">Ainda não há reports. Crie o primeiro em "Novo report".</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

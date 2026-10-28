@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Configurações{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header"><h1>Configurações</h1><p>Valem para todos os utilizadores.</p></div>
+                <form method="post" class="settings-grid">
+                    <section class="card">
+                        <div class="card-head"><h3>Cor de realce</h3><p>Cor do menu, dos botões e dos destaques.</p></div>
+                        <div class="accent-palette" role="group" aria-label="Paleta de cores">
+                            {% for label, color in palette %}<button type="button" class="accent-swatch" style="--swatch: {{ color }}" data-swatch="{{ color }}" title="{{ label }}" aria-label="{{ label }}"></button>{% endfor %}
+                            <label class="accent-custom"><input type="color" name="accent" id="accentInput" value="{{ settings.accent or '#2563eb' }}" data-saved="{{ settings.accent }}"> Outra cor</label>
+                        </div>
+                        <div class="accent-actions">
+                            {% if settings.accent %}<button type="submit" name="reset_accent" value="1" class="btn btn-outline btn-sm">Repor azul</button>{% endif %}
+                        </div>
+                    </section>
+                    <section class="card">
+                        <div class="card-head"><h3>Retenção</h3><p>Dias que os ficheiros gerados ficam guardados para download e reenvio. O registo das execuções fica.</p></div>
+                        <label class="field"><span class="label">Dias</span><input type="number" name="retention_days" value="{{ settings.retention_days }}" min="1" max="3650" required></label>
+                    </section>
+                    <div class="form-actions span-2"><button type="submit" class="btn btn-primary btn-sm">Guardar configurações</button></div>
+                </form>
+            </section>
+{% endblock %}
