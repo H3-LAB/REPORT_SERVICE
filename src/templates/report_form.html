@@ -186,7 +186,8 @@
                         <div id="recipients" class="recipients"></div>
                         <div class="form">
                             <label class="field"><span class="label">Assunto (e-mail) / legenda (Telegram)</span><input name="subject" value="{{ report.subject or '' }}" maxlength="200" placeholder="Por defeito, o título do report"></label>
-                            <label class="field"><span class="label">Mensagem</span><textarea name="message" rows="3" maxlength="2000" placeholder="Report em anexo.">{{ report.message or '' }}</textarea></label>
+                            <label class="field"><span class="label">Mensagem</span><textarea name="message" rows="3" maxlength="2000" placeholder="Segue em anexo o relatório {report} gerado em {gerado_em}.">{{ report.message or '' }}</textarea>
+                                <small>Variáveis no assunto e na mensagem: <code>{gerado_em}</code> (2026-10-28 08:00:03), <code>{inicio}</code> e <code>{fim}</code> (período), <code>{report}</code>, <code>{ficheiro}</code>. Com formato: <code>{gerado_em:%d/%m/%Y %H:%M}</code>, <code>{inicio:%d/%m}</code>.</small></label>
                         </div>
                     </section>
 

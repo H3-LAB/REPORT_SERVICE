@@ -20,6 +20,7 @@ Quem não está em nenhum vê "Sem acesso" e sai da sessão; o próximo login l�
 - **Canais** (admin): SMTP, NS (SOAP `MailRequest`, com endpoint, ClientID, TemplateID, SignMessage…) e Telegram (bot). Cada canal tem "Enviar teste".
 - **Logos** (admin): biblioteca de PNG/JPG; cada report escolhe o seu.
 - **Report**: equipa, categoria (a lista de reports agrupa-se em tabs por categoria), fonte, dashboard, painéis por ordem (cada painel pode ter um período próprio), variáveis, período, formato (PDF A4 ou ZIP), tema, agendamento (diário, semanal, mensal) e destinatários por canal (e-mails Para/Cc; Telegram `chat_id` e ID do tópico).
+- **Assunto e mensagem** aceitam variáveis: `{gerado_em}` (data e hora do envio), `{inicio}` e `{fim}` (período), `{report}` e `{ficheiro}`; com formato, ex. `{gerado_em:%d/%m/%Y %H:%M}`.
 - **Execuções**: "Executar agora", agendadas e reenvios correm no scheduler; cada uma guarda o log (painéis e envios), o estado (`sucesso`, `parcial`, `erro`) e o ficheiro durante a retenção.
 - Tokens e passwords das fontes e canais ficam cifrados na base de dados com `ENCRYPTION_KEY`; nunca voltam ao browser.
 

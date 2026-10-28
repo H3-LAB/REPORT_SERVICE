@@ -26,7 +26,8 @@ EMAIL = re.compile(r'[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+')
 TELEGRAM_CHAT = re.compile(r'-?\d{1,20}|@[A-Za-z0-9_]{5,64}')
 REPORT_KINDS = {'grafana': 'Painéis do Grafana (PDF)', 'sql': 'Consultas SQL (Excel/CSV, no agente)',
                 'script': 'Script (Python/shell, no agente)'}
-SQL_OUTPUTS = {'xlsx': 'Excel (.xlsx)', 'xlsx_zip': 'Excel dentro de um ZIP', 'csv_zip': 'ZIP com um CSV por consulta'}
+SQL_OUTPUTS = {'xlsx': 'Excel (.xlsx)', 'xlsx_zip': 'ZIP com o Excel lá dentro',
+               'csv_zip': 'ZIP com um CSV por consulta (sem Excel)'}
 STATUS_CLASS = {'sucesso': 'pill-ok', 'parcial': 'pill-warn', 'erro': 'pill-error', 'pendente': 'pill-muted',
                 'a executar': 'pill-muted'}
 

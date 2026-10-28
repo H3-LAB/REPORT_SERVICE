@@ -6,6 +6,7 @@ segue por aqui, como nos do Grafana.
 
 import logging
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -28,6 +29,21 @@ STALE_MINUTES = 60
 # Uma execução de agente "pendente" há mais tempo que isto: o agente está desligado
 AGENT_WAIT_MINUTES = int(os.getenv('AGENT_WAIT_MINUTES', '30'))
 AGENT_KINDS = ('sql', 'script')
+
+
+TEXT_FIELD = re.compile(r'\{(\w+)(?::([^{}]+))?\}')
+
+
+def fill_text(text, values):
+    """Variáveis do assunto e da mensagem: ``{gerado_em}``, ``{inicio:%d/%m/%Y}``, … (as desconhecidas ficam)."""
+    def value(match):
+        found = values.get(match[1])
+        if found is None:
+            return match[0]
+        if not hasattr(found, 'strftime'):
+            return str(found)
+        return found.strftime(match[2] or ('%Y-%m-%d %H:%M:%S' if match[1] == 'gerado_em' else '%Y-%m-%d'))
+    return TEXT_FIELD.sub(value, text or '')
 
 
 class Log(list):
@@ -127,10 +143,14 @@ def execute(run):
 
         recipients = [] if run.get('trigger') == 'teste' else report_recipients(report['id'])
         sent = failed_sends = 0
-        subject = report['subject'] or report['title'] or report['name']
+        values = {'gerado_em': datetime.now(APP_TIMEZONE), 'inicio': result['start'], 'fim': result['end'],
+                  'report': report['name'], 'ficheiro': result['file_name']}
+        values = {k: v.astimezone(APP_TIMEZONE) if isinstance(v, datetime) else v for k, v in values.items()}
+        subject = fill_text(report['subject'] or report['title'] or report['name'], values)
+        message = fill_text(report['message'], values)
         for channel in recipients:
             try:
-                detail = send(channel, channel['target'], subject, report['message'], result['file_name'],
+                detail = send(channel, channel['target'], subject, message, result['file_name'],
                               result['mime'], result['data'])
                 log.add(f"{channel['name']}: {detail}", 'ok')
                 sent += 1

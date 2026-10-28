@@ -96,6 +96,13 @@ class PeriodTest(unittest.TestCase):
         start, _ = period_range('last_7_days', datetime(2026, 10, 26, 9, tzinfo=LISBON))
         self.assertEqual(start.utcoffset().total_seconds(), 3600)
 
+    def test_message_variables(self):
+        values = {'gerado_em': datetime(2026, 10, 28, 8, 0, 3), 'inicio': datetime(2026, 10, 27), 'report': 'ONLINESTORE'}
+        self.assertEqual(runner.fill_text('Relatório {report} gerado em {gerado_em}.', values),
+                         'Relatório ONLINESTORE gerado em 2026-10-28 08:00:03.')
+        self.assertEqual(runner.fill_text('{inicio:%d/%m/%Y} {gerado_em:%H:%M} {outra} {}', values),
+                         '27/10/2026 08:00 {outra} {}')
+
     def test_next_run(self):
         after = datetime(2026, 10, 28, 9, 0, tzinfo=LISBON)  # quarta
         self.assertEqual(next_run({'freq': 'daily', 'time': '08:00'}, after).day, 29)
