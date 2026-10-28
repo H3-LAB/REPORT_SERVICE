@@ -257,9 +257,16 @@ def main():
                 'permitidos' if ALLOW_SCRIPTS else 'desligados', REPORT_SERVICE_URL, POLL_SECONDS, POLL_SECONDS)
     while not stopping:
         try:
-            response = session.post(f'{REPORT_SERVICE_URL}/api/agente/trabalho', json=info, timeout=30)
+            # Sem seguir redirecionamentos: um 3xx é um REPORT_SERVICE_URL errado e perdia o pedido
+            response = session.post(f'{REPORT_SERVICE_URL}/api/agente/trabalho', json=info, timeout=30,
+                                    allow_redirects=False)
             if response.status_code == 204:
                 time.sleep(POLL_SECONDS)
+                continue
+            if response.is_redirect:
+                logger.error('O servidor redirecionou para %s: REPORT_SERVICE_URL não aponta para a API dos agentes '
+                             '(porta do agent-api, sem prefixo).', response.headers.get('Location'))
+                time.sleep(60)
                 continue
             if response.status_code == 401:
                 logger.error('Token recusado: gere um novo em Administração → Agentes.')
@@ -277,7 +284,8 @@ def main():
             try:
                 session.post(f"{REPORT_SERVICE_URL}/api/agente/execucoes/{job['run_id']}",
                              data={'ok': '1' if ok else '0', 'log': json.dumps(log)},
-                             files={'file': (name, data)} if ok else None, timeout=300).raise_for_status()
+                             files={'file': (name, data)} if ok else None, timeout=300,
+                             allow_redirects=False).raise_for_status()
                 break
             except requests.RequestException as exc:
                 logger.warning('Falhou a entrega do resultado (%s/5): %s', attempt + 1, exc)
