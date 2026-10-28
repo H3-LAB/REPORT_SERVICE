@@ -125,10 +125,11 @@
                     </section>
 
                     <section class="card">
-                        <div class="card-head"><h3>Período e formato</h3><p>As datas contam no fuso horário da fonte de dados (nos reports de agente, no da app).</p></div>
+                        <div class="card-head"><h3>Período e formato</h3><p>As datas contam no fuso horário da fonte de dados (nos reports SQL e script, no da app).</p></div>
                         <div class="form">
                             <label class="field"><span class="label">Período</span>
-                                <select name="period">{% for key, label in periods.items() %}<option value="{{ key }}"{% if key == report.period %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                                <select name="period">{% for key, label in periods.items() %}<option value="{{ key }}"{% if key == report.period %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="none" data-kind="sql script"{% if report.period == 'none' %} selected{% endif %}>Sem período (a query decide)</option></select>
+                                <small data-kind="sql script">Preenche <code>:from</code>/<code>:to</code> na query, <code>{inicio}</code>/<code>{fim}</code> na mensagem e a data do nome do ficheiro. Se a query já define o intervalo, escolha "Sem período".</small>
                             </label>
                             <div class="form" data-kind="grafana">
                             <div class="field-row-2">

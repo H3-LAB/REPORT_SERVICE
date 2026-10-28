@@ -37,9 +37,11 @@ TEXT_FIELD = re.compile(r'\{(\w+)(?::([^{}]+))?\}')
 def fill_text(text, values):
     """Variáveis do assunto e da mensagem: ``{gerado_em}``, ``{inicio:%d/%m/%Y}``, … (as desconhecidas ficam)."""
     def value(match):
-        found = values.get(match[1])
-        if found is None:
+        if match[1] not in values:
             return match[0]
+        found = values[match[1]]
+        if found is None:
+            return ''
         if not hasattr(found, 'strftime'):
             return str(found)
         return found.strftime(match[2] or ('%Y-%m-%d %H:%M:%S' if match[1] == 'gerado_em' else '%Y-%m-%d'))
@@ -145,7 +147,7 @@ def execute(run):
         sent = failed_sends = 0
         values = {'gerado_em': datetime.now(APP_TIMEZONE), 'inicio': result['start'], 'fim': result['end'],
                   'report': report['name'], 'ficheiro': result['file_name']}
-        values = {k: v.astimezone(APP_TIMEZONE) if isinstance(v, datetime) else v for k, v in values.items()}
+        values = {k: v.astimezone(APP_TIMEZONE) if isinstance(v, datetime) else v for k, v in values.items()}  # None: sem período
         subject = fill_text(report['subject'] or report['title'] or report['name'], values)
         message = fill_text(report['message'], values)
         for channel in recipients:

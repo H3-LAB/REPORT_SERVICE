@@ -18,6 +18,7 @@ RUN useradd --system --uid 10001 reporting
 USER reporting
 
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
+# Um só healthcheck para web, agent-api (HTTPS) e scheduler: ver healthcheck.py
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD ["python", "/app/healthcheck.py"]
 # timeout 300: a pré-visualização espera pelo render dos painéis no Grafana
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", "--timeout", "300", "--access-logfile", "-", "app:app"]

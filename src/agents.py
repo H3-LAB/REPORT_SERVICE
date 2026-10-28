@@ -55,10 +55,12 @@ def job_payload(run, report):
     queries = db.query('SELECT q.sheet, q.query, c.* FROM report_queries q JOIN db_connections c '
                        'ON c.id = q.connection_id WHERE q.report_id = %s ORDER BY q.position', (report['id'],))
     job = {'run_id': run['id'], 'kind': report['kind'], 'report': report['name'], 'output': report['output'],
-           'file_stem': file_stem(report['name'], run['period_from']), 'timezone': str(APP_TIMEZONE),
-           # :to é exclusivo (início do dia/semana/mês seguinte): use "data >= :from AND data < :to"
+           'file_stem': file_stem(report['name'], run['period_from'] or datetime.now(APP_TIMEZONE)),
+           'timezone': str(APP_TIMEZONE),
+           # :to é exclusivo (início do dia/semana/mês seguinte): use "data >= :from AND data < :to".
+           # Sem período, a query define o intervalo
            'period': {'from': run['period_from'].isoformat(),
-                      'to': (run['period_to'] + timedelta(microseconds=1)).isoformat()}}
+                      'to': (run['period_to'] + timedelta(microseconds=1)).isoformat()} if run['period_from'] else None}
     if report['kind'] == 'sql':
         job['queries'] = [{'sheet': q['sheet'], 'query': q['query'], 'connection': connection_payload(q)}
                           for q in queries]
@@ -90,7 +92,8 @@ def claim():
         if not run:
             return '', 204
         report = conn.execute('SELECT * FROM reports WHERE id = %s', (run['report_id'],)).fetchone()
-        start, end = period_range(report['period'], datetime.now(APP_TIMEZONE))
+        start, end = (None, None) if report['period'] == 'none' else \
+            period_range(report['period'], datetime.now(APP_TIMEZONE))
         run = conn.execute("UPDATE runs SET status = 'a executar', started_at = now(), agent_id = %s, "
                            "period_from = %s, period_to = %s WHERE id = %s RETURNING *",
                            (agent['id'], start, end, run['id'])).fetchone()

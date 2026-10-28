@@ -45,7 +45,7 @@
                                 <tr>
                                     <td><a href="{{ url_for('report_form', report_id=r.id) }}"><strong>{{ r.name }}</strong></a>{% if selected | length != 1 and r.category %}<small class="sub">{{ r.category }}</small>{% endif %}{% if r.kind == 'grafana' %}<small class="sub">{{ r.dashboard_title or r.dashboard_uid }}</small><small class="sub">{{ r.source_name }}</small>{% else %}<small class="sub">{{ 'Consultas SQL' if r.kind == 'sql' else 'Script' }} · agente {{ r.agent_name }}</small>{% endif %}</td>
                                     <td><span class="badge">{{ r.team }}</span></td>
-                                    <td>{{ periods[r.period] }}</td>
+                                    <td>{{ periods.get(r.period, 'Sem período') }}</td>
                                     <td>{% if r.active %}{{ describe_schedule(r.schedule) }}{% else %}<span class="muted">Inativo</span>{% endif %}</td>
                                     <td>{{ r.next_run_at | dt if r.active else '-' }}</td>
                                     <td>{% if r.last_run %}<a class="pill {{ status_class[r.last_run.status] }}" href="{{ url_for('run_detail', run_id=r.last_run.id) }}">{{ r.last_run.status }}</a>{% else %}<span class="muted">Nunca</span>{% endif %}</td>

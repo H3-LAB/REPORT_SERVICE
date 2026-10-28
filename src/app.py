@@ -26,6 +26,8 @@ EMAIL = re.compile(r'[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+')
 TELEGRAM_CHAT = re.compile(r'-?\d{1,20}|@[A-Za-z0-9_]{5,64}')
 REPORT_KINDS = {'grafana': 'Painéis do Grafana (PDF)', 'sql': 'Consultas SQL (Excel/CSV, no agente)',
                 'script': 'Script (Python/shell, no agente)'}
+# Reports SQL/script cuja query define o intervalo: sem :from/:to, o nome do ficheiro leva a data do dia
+NO_PERIOD = 'none'
 SQL_OUTPUTS = {'xlsx': 'Excel (.xlsx)', 'xlsx_zip': 'ZIP com o Excel lá dentro',
                'csv_zip': 'ZIP com um CSV por consulta (sem Excel)'}
 STATUS_CLASS = {'sucesso': 'pill-ok', 'parcial': 'pill-warn', 'erro': 'pill-error', 'pendente': 'pill-muted',
@@ -125,7 +127,7 @@ def validate_report(form):
         errors.append('O nome é obrigatório.')
     if not TEAM_NAME.fullmatch(report['team']) or not (acc['admin'] or report['team'] in acc['teams']):
         errors.append('Escolha uma das suas equipas.')
-    if report['period'] not in PERIODS:
+    if report['period'] not in PERIODS and not (kind in AGENT_KINDS and report['period'] == NO_PERIOD):
         errors.append('Escolha o período.')
     if report['active'] and not report['schedule']:
         errors.append('Um report ativo precisa de agendamento.')
@@ -523,8 +525,14 @@ def create_app():
 
 app = create_app() if os.getenv('REPORTING_NO_APP') != '1' else None
 
-# URL_PREFIX (ex. /reporting): a app responde só debaixo do prefixo
+# URL_PREFIX (ex. /reporting): a app responde só debaixo do prefixo; /health também na raiz (healthcheck)
 if app and os.getenv('URL_PREFIX'):
     prefix = '/' + os.environ['URL_PREFIX'].strip('/')
-    app.wsgi_app = DispatcherMiddleware(lambda env, start: (start('302 Found', [('Location', prefix + '/')]), [b''])[1],
-                                        {prefix: app.wsgi_app})
+    inner = app.wsgi_app
+
+    def outside_prefix(env, start):
+        if env.get('PATH_INFO') == '/health':
+            return inner(env, start)
+        start('302 Found', [('Location', prefix + '/')])
+        return [b'']
+    app.wsgi_app = DispatcherMiddleware(outside_prefix, {prefix: inner})

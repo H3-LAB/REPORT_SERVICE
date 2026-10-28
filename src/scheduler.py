@@ -12,6 +12,13 @@ import runner
 
 POLL_SECONDS = int(os.getenv('SCHEDULER_POLL_SECONDS', '15'))
 HOUSEKEEPING_SECONDS = 3600
+HEARTBEAT = '/tmp/scheduler.heartbeat'
+
+
+def touch_heartbeat():
+    """Sinal de vida para o healthcheck (healthcheck.py): só depois de um ciclo sem erros."""
+    with open(HEARTBEAT, 'w'):
+        pass
 
 
 def main():
@@ -29,6 +36,8 @@ def main():
                 log.info('Execuções agendadas criadas')
             while run := runner.claim_next():
                 runner.execute(run)
+                touch_heartbeat()
+            touch_heartbeat()
         except Exception:
             # Base de dados em baixo, por exemplo: tenta outra vez na próxima volta
             log.exception('Erro no ciclo do scheduler')

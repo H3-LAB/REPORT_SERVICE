@@ -70,9 +70,14 @@ def connect(info):
 
 
 def run_query(conn, query, period):
+    if period is None and PARAM.search(query):
+        raise RuntimeError('A query usa :from/:to, mas o report está "Sem período": escolha um período no report.')
     with conn.transaction(), conn.cursor() as cur:
         cur.execute(f'SET LOCAL statement_timeout = {QUERY_TIMEOUT * 1000}')
-        cur.execute(bind(query), period)
+        if period is None:
+            cur.execute(query)  # sem parâmetros: os % da query ficam como estão
+        else:
+            cur.execute(bind(query), period)
         if cur.description is None:
             return [], []
         return [column.name for column in cur.description], cur.fetchall()
@@ -139,7 +144,7 @@ def zip_files(files):
 
 def sql_job(job, log):
     tz = ZoneInfo(job['timezone'])
-    period = {'from': datetime.fromisoformat(job['period']['from']), 'to': datetime.fromisoformat(job['period']['to'])}
+    period = job['period'] and {k: datetime.fromisoformat(v) for k, v in job['period'].items()}
     sheets, connections = [], {}
     try:
         for item in job['queries']:
@@ -174,7 +179,8 @@ def script_env(job, out_dir):
     env = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL', 'TZ', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY',
                                             'https_proxy', 'http_proxy', 'no_proxy') if key in os.environ}
     env.update(HOME=out_dir, REPORT_OUTPUT_DIR=out_dir, REPORT_NAME=job['report'], REPORT_FILE_STEM=job['file_stem'],
-               REPORT_FROM=job['period']['from'], REPORT_TO=job['period']['to'], REPORT_TIMEZONE=job['timezone'],
+               REPORT_FROM=(job['period'] or {}).get('from', ''), REPORT_TO=(job['period'] or {}).get('to', ''),
+               REPORT_TIMEZONE=job['timezone'],
                PYTHONUNBUFFERED='1')
     for info in job.get('connections', []):
         prefix = f"DB_{env_name(info['name'])}_"

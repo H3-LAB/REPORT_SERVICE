@@ -345,6 +345,24 @@ class WebTest(unittest.TestCase):
         self.assertEqual(client.get('/health').status_code, 200)
         self.assertEqual(client.post('/api/agente/trabalho', headers={'Authorization': 'Bearer rta_x'}).status_code, 401)
 
+    def test_agent_sql_without_period(self):
+        import agent
+        import psycopg
+        info = psycopg.conninfo.conninfo_to_dict(os.environ['DATABASE_URL'])
+        connection = {'name': 'teste', 'host': info['host'], 'port': info.get('port', 5432), 'database': info['dbname'],
+                      'username': info['user'], 'password': info['password']}
+        job = {'run_id': 1, 'kind': 'sql', 'report': 'R', 'file_stem': 'R_2026-10-28', 'timezone': 'Europe/Lisbon',
+               'output': 'xlsx_zip', 'period': None,
+               'queries': [{'sheet': 'S', 'query': "SELECT '50%' AS \"P\"", 'connection': connection}]}
+        ok, name, data, log = agent.execute(job)
+        self.assertTrue(ok, log)
+        self.assertEqual(name, 'R_2026-10-28.zip')
+        job['queries'][0]['query'] = 'SELECT now() >= :from'
+        ok, _, _, log = agent.execute(job)
+        self.assertFalse(ok)
+        self.assertIn('Sem período', json.dumps(log, ensure_ascii=False))
+        self.assertEqual(runner.fill_text('{inicio}|{fim}', {'inicio': None, 'fim': None}), '|')
+
     def test_agent_scripts(self):
         import agent
         job = {'run_id': 1, 'kind': 'script', 'report': 'R', 'file_stem': 'R_2026', 'timezone': 'Europe/Lisbon',

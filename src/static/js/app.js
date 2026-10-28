@@ -302,6 +302,11 @@ if (reportData) {
         document.querySelectorAll("#report-form [data-kind]").forEach((node) => {
             const on = node.dataset.kind.split(" ").includes(kind);
             node.hidden = !on;
+            if (node.tagName === "OPTION") {
+                // Opção só de alguns tipos (ex. "Sem período"): se estava escolhida, volta à primeira
+                if (!on && node.selected) node.parentElement.selectedIndex = 0;
+                node.disabled = !on;
+            }
             node.querySelectorAll("input, select, textarea").forEach((input) => { input.disabled = !on; });
         });
         if (kind === "sql" && !$("queries").children.length && reportData.connections.length) $("queries").append(queryRow());
