@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Ligações BD{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>Ligações a bases de dados</h1><p>Usadas pelos reports SQL e script. Cada ligação é aberta pelo seu agente, em modo só de leitura. A password fica cifrada e não volta a ser mostrada.</p></div>
+                    <a class="btn btn-primary btn-sm" href="{{ url_for('admin.connection_form') }}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova ligação</a>
+                </div>
+                <section class="card">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Nome</th><th>Base de dados</th><th>Agente</th><th>Reports</th><th></th></tr></thead>
+                            <tbody>
+                            {% for c in connections %}
+                                <tr>
+                                    <td><a href="{{ url_for('admin.connection_form', connection_id=c.id) }}"><strong>{{ c.name }}</strong></a><small class="sub">PostgreSQL</small></td>
+                                    <td><code>{{ c.username }}@{{ c.host }}:{{ c.port }}/{{ c.database }}</code></td>
+                                    <td>{{ c.agent_name }}</td>
+                                    <td>{{ c.reports }}</td>
+                                    <td><a class="btn btn-outline btn-sm" href="{{ url_for('admin.connection_form', connection_id=c.id) }}">Editar</a></td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="5" class="empty">Nenhuma ligação. Crie primeiro o agente, depois a ligação.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

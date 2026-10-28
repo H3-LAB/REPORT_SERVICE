@@ -1,17 +1,18 @@
-"""Testes: períodos, perfis, PDF, NS, formulários, permissões por equipa, execuções e importação.
+"""Testes: períodos, perfis, PDF, NS, formulários, permissões por equipa, execuções, agentes e importação.
 
-Precisa de um PostgreSQL vazio em DATABASE_URL (a base é limpa no início):
-    docker run --rm --network host -e DATABASE_URL=postgresql://... -v "$PWD":/w -w /w/src <imagem> \
-        python -m unittest discover -s ../tests
+Precisa de um PostgreSQL vazio em DATABASE_URL (a base é limpa no início) e do openpyxl (o agente usa-o):
+    docker run --rm --network host -e DATABASE_URL=postgresql://... -v "$PWD":/w -w /w/src --user root <imagem> \
+        sh -c 'pip install -q openpyxl && python -m unittest discover -s ../tests'
 """
 
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest import mock
 from zoneinfo import ZoneInfo
 
@@ -20,10 +21,11 @@ from PIL import Image
 
 os.environ.update({
     'SECRET_KEY': 'test', 'ENCRYPTION_KEY': Fernet.generate_key().decode(), 'AUTH_DISABLED': '0',
-    'KEYCLOAK_URL': 'http://keycloak.invalid', 'KEYCLOAK_REALM': 'test', 'KEYCLOAK_CLIENT_ID': 'REPORTING_TOOL',
+    'KEYCLOAK_URL': 'http://keycloak.invalid', 'KEYCLOAK_REALM': 'test', 'KEYCLOAK_CLIENT_ID': 'REPORT_SERVICE',
     'KEYCLOAK_CLIENT_SECRET': 'x', 'SESSION_COOKIE_SECURE': '0',
 })
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agent'))
 
 import db  # noqa: E402
 
@@ -253,6 +255,97 @@ class WebTest(unittest.TestCase):
         self.login(PKI)
         self.assertIn('Só PKI', self.client.get('/').get_data(as_text=True))
 
+    def test_reports_are_grouped_by_category(self):
+        source, channel = self.make_source_and_channel()
+        self.login(OPERATOR)
+        for name, category in (('A', ' TSA '), ('B', 'PKI'), ('C', '')):
+            self.client.post('/reports/novo', data=self.report_form(source, channel, name=f'Report {name}',
+                                                                    category=category))
+        self.assertEqual(db.one("SELECT category FROM reports WHERE name = 'Report A'")['category'], 'TSA')
+        page = self.client.get('/').get_data(as_text=True)
+        self.assertIn('Sem categoria', page)
+        self.assertTrue(all(f'Report {n}' in page for n in 'ABC'))
+        page = self.client.get('/?categoria=TSA').get_data(as_text=True)
+        self.assertIn('Report A', page)
+        self.assertNotIn('Report B', page)
+        page = self.client.get('/?categoria=TSA&categoria=').get_data(as_text=True)
+        self.assertTrue('Report A' in page and 'Report C' in page)
+        self.assertNotIn('Report B', page)
+
+    def test_agent_sql_report(self):
+        import agent
+        import openpyxl
+        import psycopg
+        source, channel = self.make_source_and_channel()
+        page = self.client.post('/admin/agentes', data={'name': 'zproxy15'}).get_data(as_text=True)
+        token = re.search(r'rta_[\w-]+', page)[0]
+        self.assertNotIn(token, json.dumps(db.query('SELECT * FROM agents'), default=str))
+        info = psycopg.conninfo.conninfo_to_dict(os.environ['DATABASE_URL'])
+        agent_id = db.one("SELECT id FROM agents WHERE name = 'zproxy15'")['id']
+        self.client.post('/admin/ligacoes/nova', data={
+            'name': 'onlinestore', 'agent_id': agent_id, 'host': info['host'], 'port': info.get('port', 5432),
+            'database': info['dbname'], 'username': info['user'], 'password': info['password']})
+        connection = db.one("SELECT * FROM db_connections WHERE name = 'onlinestore'")
+        self.assertNotEqual(connection['password'], info['password'])
+        yesterday = datetime.now(LISBON).replace(hour=12) - timedelta(days=1)
+        db.execute('CREATE TABLE orders (id int, created timestamptz, note text)')
+        db.execute("INSERT INTO orders VALUES (1, %s, 'a%%b'), (2, %s, 'a%%b'), (3, %s, 'x')",
+                   (yesterday, yesterday + timedelta(days=1), yesterday))
+        query = "SELECT id AS \"ID\", note FROM orders WHERE created >= :from AND created < :to AND note LIKE '%a%'"
+        form = self.report_form(source, channel, kind='sql', name='Onlinestore', output='xlsx', period='previous_day',
+                                queries=json.dumps([{'connection_id': connection['id'], 'sheet': 'ORDERS', 'query': query}]))
+        response = self.client.post('/reports/novo', data=form)
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True)[:800])
+        report = db.one("SELECT * FROM reports WHERE name = 'Onlinestore'")
+        self.assertEqual((report['kind'], report['agent_id'], report['source_id']), ('sql', agent_id, None))
+
+        # O scheduler não gera reports de agente; o agente vai buscá-los com o token
+        self.client.post(f"/reports/{report['id']}/executar")
+        self.assertIsNone(runner.claim_next())
+        api = self.app.test_client()
+        self.assertEqual(api.post('/api/agente/trabalho', headers={'Authorization': 'Bearer rta_errado'}).status_code, 401)
+        auth = {'Authorization': f'Bearer {token}'}
+        job = api.post('/api/agente/trabalho', json={'hostname': 'zproxy15', 'allow_scripts': False}, headers=auth).get_json()
+        self.assertEqual(job['queries'][0]['connection']['password'], info['password'])
+        self.assertEqual(api.post('/api/agente/trabalho', json={}, headers=auth).status_code, 204)
+
+        ok, name, data, log = agent.execute(job)
+        self.assertTrue(ok, log)
+        self.assertEqual(list(openpyxl.load_workbook(io.BytesIO(data))['ORDERS'].values), [('ID', 'note'), (1, 'a%b')])
+        api.post(f"/api/agente/execucoes/{job['run_id']}", headers=auth, data={
+            'ok': '1', 'log': json.dumps(log), 'file': (io.BytesIO(data), name)})
+        run = runner.claim_next()
+        with mock.patch('runner.send', return_value='enviado') as send:
+            self.assertEqual(runner.execute(run), 'sucesso')
+        self.assertEqual(send.call_args[0][4], name)
+        text = json.dumps(run_row(run['id'])['log'], ensure_ascii=False)
+        self.assertIn('Agente zproxy15', text)
+        self.assertIn('Folha \\"ORDERS\\": 1 linhas', text)
+
+        # Agente desligado: a execução não fica pendente para sempre
+        stale = db.one("INSERT INTO runs (report_id, trigger, created_at) VALUES (%s, 'manual', now() - interval '2 hours') "
+                       'RETURNING id', (report['id'],))
+        runner.housekeeping()
+        self.assertEqual(run_row(stale['id'])['status'], 'erro')
+
+    def test_agent_scripts(self):
+        import agent
+        job = {'run_id': 1, 'kind': 'script', 'report': 'R', 'file_stem': 'R_2026', 'timezone': 'Europe/Lisbon',
+               'period': {'from': '2026-10-27T00:00:00+00:00', 'to': '2026-10-28T00:00:00+00:00'},
+               'connections': [{'name': 'online-store', 'host': 'h', 'port': 5432, 'database': 'd', 'username': 'u',
+                                'password': 'p'}],
+               'script': {'lang': 'python', 'code': (
+                   "import os\nassert 'AGENT_TOKEN' not in os.environ\nprint('olá', os.environ['DB_ONLINE_STORE_USER'])\n"
+                   "open(os.path.join(os.environ['REPORT_OUTPUT_DIR'], 'r.csv'), 'w').write(os.environ['REPORT_FROM'])\n")}}
+        ok, _, _, log = agent.execute(job)
+        self.assertFalse(ok)
+        self.assertIn('ALLOW_SCRIPTS', json.dumps(log))
+        with mock.patch('agent.ALLOW_SCRIPTS', True), mock.patch.dict(os.environ, {'AGENT_TOKEN': 'rta_segredo'}):
+            ok, name, data, log = agent.execute(job)
+        self.assertTrue(ok, log)
+        self.assertEqual((name, data), ('r.csv', b'2026-10-27T00:00:00+00:00'))
+        self.assertIn('olá u', json.dumps(log, ensure_ascii=False))
+
     def test_invalid_report_is_rejected(self):
         source, channel = self.make_source_and_channel()
         self.login(OPERATOR)
@@ -322,7 +415,8 @@ class ImportTest(unittest.TestCase):
         reports = db.query("SELECT * FROM reports WHERE name = 'TSA - SERVICE REPORT'")
         self.assertEqual(len(reports), 1)
         report = reports[0]
-        self.assertEqual((report['period'], report['variables'], report['active']), ('previous_month', {'client': 'bcp'}, False))
+        self.assertEqual((report['period'], report['variables'], report['active'], report['category']),
+                         ('previous_month', {'client': 'bcp'}, False, 'TSA'))
         panels = db.query('SELECT panel_id, period FROM report_panels WHERE report_id = %s ORDER BY position', (report['id'],))
         self.assertEqual([(p['panel_id'], p['period']) for p in panels], [(1, None), (2, 'previous_day'), (3, None)])
         source = db.one('SELECT * FROM data_sources WHERE id = %s', (report['source_id'],))

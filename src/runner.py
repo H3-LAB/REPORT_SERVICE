@@ -1,4 +1,8 @@
-"""Gerar um report (render dos painéis + PDF/ZIP) e executar as execuções pendentes."""
+"""Gerar um report (render dos painéis + PDF/ZIP) e executar as execuções pendentes.
+
+Os reports SQL e script são gerados por um agente (``agents.py``); o ficheiro volta para a execução e o envio
+segue por aqui, como nos do Grafana.
+"""
 
 import logging
 import os
@@ -21,6 +25,9 @@ RENDER_CONCURRENCY = int(os.getenv('RENDER_CONCURRENCY', '2'))
 APP_TIMEZONE = ZoneInfo(os.getenv('APP_TIMEZONE', 'Europe/Lisbon'))
 # Uma execução "a executar" há mais tempo que isto ficou presa (scheduler reiniciado a meio)
 STALE_MINUTES = 60
+# Uma execução de agente "pendente" há mais tempo que isto: o agente está desligado
+AGENT_WAIT_MINUTES = int(os.getenv('AGENT_WAIT_MINUTES', '30'))
+AGENT_KINDS = ('sql', 'script')
 
 
 class Log(list):
@@ -91,11 +98,17 @@ def generate(report, log):
 
 def execute(run):
     """Executa uma linha de ``runs`` já marcada "a executar": gera (ou reutiliza, num reenvio) e envia."""
-    log = Log()
+    log = Log(run.get('log') or [])  # num report de agente, o log do agente vem primeiro
     report = db.one('SELECT * FROM reports WHERE id = %s', (run['report_id'],))
     status, file_saved = 'erro', False
     try:
-        if run['parent_run_id']:
+        if run.get('has_file'):
+            # Gerado pelo agente
+            done = db.one('SELECT file_name, file_mime, file, period_from, period_to FROM runs WHERE id = %s',
+                          (run['id'],))
+            result = {'file_name': done['file_name'], 'mime': done['file_mime'], 'data': bytes(done['file']),
+                      'start': done['period_from'], 'end': done['period_to'], 'failed': 0}
+        elif run['parent_run_id']:
             parent = db.one('SELECT file_name, file_mime, file, period_from, period_to FROM runs WHERE id = %s',
                             (run['parent_run_id'],))
             if not parent or parent['file'] is None:
@@ -103,6 +116,8 @@ def execute(run):
             result = {'file_name': parent['file_name'], 'mime': parent['file_mime'], 'data': bytes(parent['file']),
                       'start': parent['period_from'], 'end': parent['period_to'], 'failed': 0}
             log.add(f"Reenvio do ficheiro da execução #{run['parent_run_id']}: {parent['file_name']}")
+        elif report['kind'] in AGENT_KINDS:
+            raise RuntimeError('Este report é gerado por um agente.')
         else:
             result = generate(report, log)
         db.execute('UPDATE runs SET file_name = %s, file_mime = %s, file = %s, period_from = %s, period_to = %s '
@@ -110,7 +125,7 @@ def execute(run):
                                      result['end'], run['id']))
         file_saved = True
 
-        recipients = report_recipients(report['id'])
+        recipients = [] if run.get('trigger') == 'teste' else report_recipients(report['id'])
         sent = failed_sends = 0
         subject = report['subject'] or report['title'] or report['name']
         for channel in recipients:
@@ -122,7 +137,9 @@ def execute(run):
             except DeliveryError as exc:
                 log.add(f"{channel['name']} ({recipients_text(channel['kind'], channel['target'])}): {exc}", 'error')
                 failed_sends += 1
-        if not recipients:
+        if run.get('trigger') == 'teste':
+            log.add('Teste: não foi enviado a ninguém.', 'ok')
+        elif not recipients:
             log.add('Sem destinatários: o ficheiro fica só no histórico.', 'warn')
 
         if result['failed'] == 0 and failed_sends == 0:
@@ -158,11 +175,16 @@ def enqueue_due():
 
 
 def claim_next():
-    """A execução pendente mais antiga, já marcada "a executar" (SKIP LOCKED: seguro com vários schedulers)."""
+    """A execução pendente mais antiga, já marcada "a executar" (SKIP LOCKED: seguro com vários schedulers).
+
+    As dos reports de agente só depois de o agente devolver o ficheiro (ou num reenvio)."""
     with db.connect() as conn:
-        return conn.execute("UPDATE runs SET status = 'a executar', started_at = now() WHERE id = ("
-                            "SELECT id FROM runs WHERE status = 'pendente' ORDER BY created_at "
-                            "LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, report_id, parent_run_id").fetchone()
+        return conn.execute(
+            "UPDATE runs SET status = 'a executar', started_at = coalesce(started_at, now()) WHERE id = ("
+            "SELECT u.id FROM runs u JOIN reports r ON r.id = u.report_id WHERE u.status = 'pendente' "
+            "AND (r.kind = 'grafana' OR u.file IS NOT NULL OR u.parent_run_id IS NOT NULL) ORDER BY u.created_at "
+            "LIMIT 1 FOR UPDATE OF u SKIP LOCKED) "
+            "RETURNING id, report_id, parent_run_id, trigger, log, file IS NOT NULL AS has_file").fetchone()
 
 
 def housekeeping():
@@ -170,6 +192,12 @@ def housekeeping():
     db.execute(f"UPDATE runs SET status = 'erro', finished_at = now(), log = log || %s "
                f"WHERE status = 'a executar' AND started_at < now() - interval '{STALE_MINUTES} minutes'",
                (Jsonb([{'time': '', 'level': 'error', 'message': 'Interrompida (o scheduler reiniciou).'}]),))
+    db.execute(f"UPDATE runs u SET status = 'erro', finished_at = now(), log = log || %s FROM reports r "
+               f"WHERE r.id = u.report_id AND r.kind IN ('sql', 'script') AND u.status = 'pendente' "
+               f"AND u.file IS NULL AND u.parent_run_id IS NULL "
+               f"AND u.created_at < now() - interval '{AGENT_WAIT_MINUTES} minutes'",
+               (Jsonb([{'time': '', 'level': 'error',
+                        'message': f'O agente não a foi buscar em {AGENT_WAIT_MINUTES} minutos: está ligado?'}]),))
     days = int(db.settings()['retention_days'])
     db.execute('UPDATE runs SET file = NULL WHERE file IS NOT NULL AND created_at < now() - make_interval(days => %s)',
                (days,))

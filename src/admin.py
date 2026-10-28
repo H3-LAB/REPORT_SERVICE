@@ -1,4 +1,5 @@
-"""Administração: fontes de dados, canais, logos, configurações e auditoria (só ``<raiz>/ADMIN``)."""
+"""Administração: fontes de dados, agentes, ligações a bases de dados, canais, logos, configurações e auditoria
+(só ``<raiz>/ADMIN``)."""
 
 import io
 import re
@@ -10,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 from psycopg.types.json import Jsonb
 
 import db
+from agents import new_token
 from auth import admin_required, username
 from delivery import CHANNEL_FIELDS, CHANNEL_KINDS, CHANNEL_SECRET, DeliveryError, send
 from sources import KINDS, SourceError, open_source
@@ -26,16 +28,17 @@ URL = re.compile(r'https?://\S+')
 LOGO_MAX_BYTES = 1024 * 1024
 
 
-def _delete(table, row_id, label, back):
+def _delete(table, row_id, label, back, feminine=False):
     """Apaga, ou explica que está em uso (FK RESTRICT)."""
+    this, deleted = ('esta', 'apagada') if feminine else ('este', 'apagado')
     try:
         row = db.one(f'DELETE FROM {table} WHERE id = %s RETURNING name', (row_id,))
     except psycopg.errors.ForeignKeyViolation:
-        flash(f'Não é possível apagar: há reports que usam este {label}.', 'error')
+        flash(f'Não é possível apagar: há reports que usam {this} {label}.', 'error')
         return redirect(url_for(back))
     if row:
-        db.audit(username(), f'{label} apagado', row['name'])
-        flash(f'{label.capitalize()} apagado.')
+        db.audit(username(), f'{label} {deleted}', row['name'])
+        flash(f'{label.capitalize()} {deleted}.')
     return redirect(url_for(back))
 
 
@@ -125,6 +128,129 @@ def source_delete(source_id):
     return _delete('data_sources', source_id, 'fonte', 'admin.sources')
 
 
+# ---------- Agentes ----------
+
+def _agents_page(new_agent_token=None, status=200):
+    rows = db.query("""SELECT a.*, a.last_seen_at > now() - interval '2 minutes' AS online,
+                              (SELECT count(*) FROM db_connections WHERE agent_id = a.id) AS connections,
+                              (SELECT count(*) FROM reports WHERE agent_id = a.id) AS reports
+                       FROM agents a ORDER BY name""")
+    return render_template('admin/agents.html', page='agents', agents=rows, new_token=new_agent_token,
+                           app_url=request.url_root.rstrip('/')), status
+
+
+@bp.route('/agentes', methods=['GET', 'POST'])
+@admin_required
+def agents():
+    if request.method == 'GET':
+        return _agents_page()
+    name = request.form.get('name', '').strip()[:60]
+    if not re.fullmatch(r'[A-Za-z0-9_.-]{2,60}', name):
+        flash('Nome do agente: letras, números, ponto, hífen ou _ (ex. zproxy15).', 'error')
+        return _agents_page(status=400)
+    token, digest = new_token()
+    try:
+        db.execute('INSERT INTO agents (name, token_hash) VALUES (%s, %s)', (name, digest))
+    except psycopg.errors.UniqueViolation:
+        flash('Já existe um agente com esse nome.', 'error')
+        return _agents_page(status=400)
+    db.audit(username(), 'agente criado', name)
+    # O token só aparece nesta resposta (não vai para a sessão)
+    return _agents_page({'agent': name, 'token': token})
+
+
+@bp.post('/agentes/<int:agent_id>/token')
+@admin_required
+def agent_token(agent_id):
+    token, digest = new_token()
+    row = db.one('UPDATE agents SET token_hash = %s WHERE id = %s RETURNING name', (digest, agent_id))
+    if not row:
+        abort(404)
+    db.audit(username(), 'token do agente renovado', row['name'])
+    return _agents_page({'agent': row['name'], 'token': token})
+
+
+@bp.post('/agentes/<int:agent_id>/apagar')
+@admin_required
+def agent_delete(agent_id):
+    try:
+        row = db.one('DELETE FROM agents WHERE id = %s RETURNING name', (agent_id,))
+    except psycopg.errors.ForeignKeyViolation:
+        flash('Não é possível apagar: há ligações ou reports que usam este agente.', 'error')
+        return redirect(url_for('admin.agents'))
+    if row:
+        db.audit(username(), 'agente apagado', row['name'])
+        flash('Agente apagado.')
+    return redirect(url_for('admin.agents'))
+
+
+# ---------- Ligações a bases de dados ----------
+
+@bp.route('/ligacoes')
+@admin_required
+def connections():
+    rows = db.query("""SELECT c.*, a.name AS agent_name,
+                              (SELECT count(DISTINCT report_id) FROM report_queries WHERE connection_id = c.id) AS reports
+                       FROM db_connections c JOIN agents a ON a.id = c.agent_id ORDER BY c.name""")
+    return render_template('admin/connections.html', page='connections', connections=rows)
+
+
+@bp.route('/ligacoes/nova', methods=['GET', 'POST'])
+@bp.route('/ligacoes/<int:connection_id>', methods=['GET', 'POST'])
+@admin_required
+def connection_form(connection_id=None):
+    existing = db.one('SELECT * FROM db_connections WHERE id = %s', (connection_id,)) if connection_id else None
+    if connection_id and not existing:
+        abort(404)
+    context = {'page': 'connections', 'agents': db.query('SELECT id, name FROM agents ORDER BY name')}
+    if request.method == 'GET':
+        return render_template('admin/connection_form.html', connection=existing or {'port': 5432}, **context)
+    form = request.form
+    values = {'name': form.get('name', '').strip()[:100], 'host': form.get('host', '').strip()[:200],
+              'database': form.get('database', '').strip()[:100], 'username': form.get('username', '').strip()[:100]}
+    errors = [] if all(values.values()) else ['Nome, host, base de dados e utilizador são obrigatórios.']
+    try:
+        values['agent_id'] = int(form.get('agent_id') or 0)
+        values['port'] = int(form.get('port') or 5432)
+        assert 1 <= values['port'] <= 65535 and any(a['id'] == values['agent_id'] for a in context['agents'])
+    except (ValueError, AssertionError):
+        errors.append('Escolha o agente e uma porta válida.')
+    if existing and values.get('agent_id') != existing['agent_id'] and db.one(
+            'SELECT 1 FROM report_queries WHERE connection_id = %s', (connection_id,)):
+        errors.append('Há reports que usam esta ligação: o agente não pode mudar (os reports correm num só agente).')
+    password = form.get('password', '')
+    if password:
+        values['password'] = db.encrypt(password)
+    connection = {**(existing or {}), **values}
+    if errors:
+        for error in errors:
+            flash(error, 'error')
+        return render_template('admin/connection_form.html', connection=connection, **context), 400
+    columns = list(values)
+    try:
+        if existing:
+            db.execute(f"UPDATE db_connections SET {', '.join(f'{c} = %s' for c in columns)}, updated_at = now() "
+                       'WHERE id = %s', list(values.values()) + [connection_id])
+        else:
+            connection_id = db.one(f"INSERT INTO db_connections ({', '.join(columns)}) "
+                                   f"VALUES ({', '.join(['%s'] * len(columns))}) RETURNING id",
+                                   list(values.values()))['id']
+    except psycopg.errors.UniqueViolation:
+        flash('Já existe uma ligação com esse nome.', 'error')
+        return render_template('admin/connection_form.html', connection=connection, **context), 400
+    db.audit(username(), 'ligação guardada', values['name'],
+             f"{values['username']}@{values['host']}:{values['port']}/{values['database']}"
+             + (' · password alterada' if password else ''))
+    flash('Ligação guardada.')
+    return redirect(url_for('admin.connection_form', connection_id=connection_id))
+
+
+@bp.post('/ligacoes/<int:connection_id>/apagar')
+@admin_required
+def connection_delete(connection_id):
+    return _delete('db_connections', connection_id, 'ligação', 'admin.connections', feminine=True)
+
+
 # ---------- Canais ----------
 
 @bp.route('/canais')
@@ -206,9 +332,9 @@ def channel_test(channel_id):
         if not target['to']:
             return jsonify({'ok': False, 'message': 'Indique um e-mail.'})
     try:
-        detail = send(channel, target, 'REPORTING TOOL: teste do canal',
+        detail = send(channel, target, 'REPORT SERVICE: teste do canal',
                       f"Teste do canal \"{channel['name']}\" pedido por {username()}.",
-                      'teste.txt', 'text/plain', 'Teste do REPORTING TOOL.\n'.encode())
+                      'teste.txt', 'text/plain', 'Teste do REPORT SERVICE.\n'.encode())
     except DeliveryError as exc:
         return jsonify({'ok': False, 'message': str(exc)})
     db.audit(username(), 'canal testado', channel['name'], detail)

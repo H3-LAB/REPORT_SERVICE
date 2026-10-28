@@ -27,7 +27,7 @@
                     {% if run.period_from %}<p class="muted small">Período: {{ run.period_from | dt }} a {{ run.period_to | dt }}{% if run.file_name %} · {{ run.file_name }}{% endif %}</p>{% endif %}
                     <ol id="run-log" class="op-log" data-url="{{ url_for('run_detail', run_id=run.id) }}">
                         {% for line in run.log %}<li class="op-{{ line.level }}"><time>{{ line.time }}</time>{{ line.message }}</li>
-                        {% else %}<li class="op-pending">À espera do scheduler…</li>{% endfor %}
+                        {% else %}<li class="op-pending">{% if run.kind in ('sql', 'script') %}À espera do agente {{ run.agent_name or '' }}…{% else %}À espera do scheduler…{% endif %}</li>{% endfor %}
                     </ol>
                 </section>
             </section>

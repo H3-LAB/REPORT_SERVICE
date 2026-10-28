@@ -9,6 +9,7 @@
                     </div>
                     {% if report.id %}
                     <div class="row-actions">
+                        {% if report.kind != 'grafana' %}<form method="post" action="{{ url_for('report_test', report_id=report.id) }}"><button class="btn btn-outline btn-sm" type="submit" title="Gera no agente sem enviar">Testar no agente</button></form>{% endif %}
                         <form method="post" action="{{ url_for('report_run', report_id=report.id) }}" data-confirm="Gerar e enviar agora a todos os destinatários?"><button class="btn btn-outline btn-sm" type="submit">Executar agora</button></form>
                         <form method="post" action="{{ url_for('report_duplicate', report_id=report.id) }}"><button class="btn btn-outline btn-sm" type="submit">Duplicar</button></form>
                         <form method="post" action="{{ url_for('report_delete', report_id=report.id) }}" data-confirm="Apagar o report e todas as suas execuções?"><button class="btn btn-danger btn-sm" type="submit">Apagar</button></form>
@@ -20,10 +21,14 @@
                     <input type="hidden" name="variables" id="f-variables">
                     <input type="hidden" name="panels" id="f-panels">
                     <input type="hidden" name="recipients" id="f-recipients">
+                    <input type="hidden" name="queries" id="f-queries">
 
                     <section class="card">
-                        <div class="card-head"><h3>Geral</h3><p>O título aparece no cabeçalho do PDF; sem título usa o nome.</p></div>
+                        <div class="card-head"><h3>Geral</h3><p>A categoria agrupa os reports na lista. O título aparece no cabeçalho do PDF; sem título usa o nome.</p></div>
                         <div class="form">
+                            <label class="field"><span class="label">Tipo</span>
+                                <select name="kind" id="f-kind">{% for key, label in kinds.items() %}<option value="{{ key }}"{% if key == report.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                            </label>
                             <label class="field"><span class="label">Nome</span><input name="name" value="{{ report.name or '' }}" maxlength="120" required></label>
                             <label class="field"><span class="label">Equipa</span>
                                 {% if acc.admin %}
@@ -33,11 +38,15 @@
                                 <select name="team">{% for t in teams %}<option{% if t == report.team %} selected{% endif %}>{{ t }}</option>{% endfor %}</select>
                                 {% endif %}
                             </label>
-                            <label class="field"><span class="label">Título no PDF</span><input name="title" value="{{ report.title or '' }}" maxlength="200"></label>
+                            <label class="field"><span class="label">Categoria</span>
+                                <input name="category" value="{{ report.category or '' }}" list="category-list" maxlength="40" placeholder="Ex. TSA, PKI, SIGN&STASH">
+                                <datalist id="category-list">{% for c in categories %}<option value="{{ c }}">{% endfor %}</datalist>
+                            </label>
+                            <label class="field" data-kind="grafana"><span class="label">Título no PDF</span><input name="title" value="{{ report.title or '' }}" maxlength="200"></label>
                         </div>
                     </section>
 
-                    <section class="card">
+                    <section class="card" data-kind="grafana">
                         <div class="card-head"><h3>Fonte e dashboard</h3><p>Lista lida da fonte de dados. Procure pelo nome do dashboard.</p></div>
                         <div class="form">
                             <label class="field"><span class="label">Fonte de dados</span>
@@ -60,7 +69,44 @@
                         </div>
                     </section>
 
-                    <section class="card span-2">
+                    <section class="card" data-kind="sql script">
+                        <div class="card-head"><h3>Agente</h3><p>Os reports SQL e script correm num agente, na máquina que chega às bases de dados.</p></div>
+                        <div class="form">
+                            <p class="muted" data-kind="sql">O agente é o das ligações escolhidas nas consultas.</p>
+                            <label class="field" data-kind="script"><span class="label">Agente (sem ligações)</span>
+                                <select name="agent_id">{% for a in agents %}<option value="{{ a.id }}"{% if a.id == report.agent_id %} selected{% endif %}>{{ a.name }}{% if not a.allow_scripts %} (scripts desligados){% endif %}</option>{% else %}<option value="">Nenhum agente: peça a um admin para criar</option>{% endfor %}</select>
+                                <small>Se escolher ligações abaixo, o agente é o delas.</small>
+                            </label>
+                            <label class="field" data-kind="sql"><span class="label">Formato</span>
+                                <select name="output">{% for key, label in sql_outputs.items() %}<option value="{{ key }}"{% if key == report.output %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                            </label>
+                        </div>
+                    </section>
+
+                    <section class="card span-2" data-kind="sql">
+                        <div class="card-head card-head-row">
+                            <div><h3>Consultas</h3><p>Uma folha do Excel (ou um CSV) por consulta, com as colunas da query como cabeçalho (use <code>AS "NOME"</code> para lhes dar nome). Use <code>:from</code> e <code>:to</code> para o período: <code>WHERE criado &gt;= :from AND criado &lt; :to</code>.</p></div>
+                            <button type="button" id="add-query" class="btn btn-outline btn-sm"{% if not connections %} disabled title="Nenhuma ligação: peça a um admin para criar"{% endif %}>
+                                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Adicionar
+                            </button>
+                        </div>
+                        <div id="queries" class="queries"></div>
+                    </section>
+
+                    <section class="card span-2" data-kind="script">
+                        <div class="card-head"><h3>Script</h3><p>Corre no agente só se ele tiver <code>ALLOW_SCRIPTS=true</code>. Escreva o ficheiro (ou ficheiros, que vão num ZIP) em <code>$REPORT_OUTPUT_DIR</code>; o stdout vai para o log. Recebe <code>REPORT_FROM</code>, <code>REPORT_TO</code> (exclusivo) e, por cada ligação, <code>DB_&lt;NOME&gt;_HOST</code>, <code>_PORT</code>, <code>_NAME</code>, <code>_USER</code>, <code>_PASSWORD</code> e <code>_DSN</code>.</p></div>
+                        <div class="form">
+                            <label class="field"><span class="label">Linguagem</span>
+                                <select name="script_lang"><option value="python"{% if report.script_lang != 'shell' %} selected{% endif %}>Python 3 (com psycopg, psycopg2, openpyxl e requests)</option><option value="shell"{% if report.script_lang == 'shell' %} selected{% endif %}>Shell (bash)</option></select>
+                            </label>
+                            <div class="field"><span class="label">Ligações que o script recebe</span>
+                                <div class="check-list">{% for c in connections %}<label class="check-row"><input type="checkbox" data-script-connection value="{{ c.id }}"{% if c.id in queries | map(attribute='connection_id') %} checked{% endif %}><span>{{ c.name }}</span><span class="count">{{ c.agent_name }}</span></label>{% else %}<span class="muted">Nenhuma ligação.</span>{% endfor %}</div>
+                            </div>
+                            <label class="field"><span class="label">Código</span><textarea name="script" class="code-input" rows="18" spellcheck="false">{{ report.script or '' }}</textarea></label>
+                        </div>
+                    </section>
+
+                    <section class="card span-2" data-kind="grafana">
                         <div class="card-head"><h3>Painéis</h3><p>Marque os painéis e ordene-os: a ordem é a do PDF. Um painel pode ter um período diferente do report (ex. diário, semanal e mensal no mesmo PDF).</p></div>
                         <div class="panels-grid">
                             <div>
@@ -79,11 +125,12 @@
                     </section>
 
                     <section class="card">
-                        <div class="card-head"><h3>Período e formato</h3><p>As datas contam no fuso horário da fonte de dados.</p></div>
+                        <div class="card-head"><h3>Período e formato</h3><p>As datas contam no fuso horário da fonte de dados (nos reports de agente, no da app).</p></div>
                         <div class="form">
                             <label class="field"><span class="label">Período</span>
                                 <select name="period">{% for key, label in periods.items() %}<option value="{{ key }}"{% if key == report.period %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
                             </label>
+                            <div class="form" data-kind="grafana">
                             <div class="field-row-2">
                                 <label class="field"><span class="label">Formato</span>
                                     <select name="output" id="f-output"><option value="pdf"{% if report.output == 'pdf' %} selected{% endif %}>PDF</option><option value="zip"{% if report.output == 'zip' %} selected{% endif %}>ZIP com os PNG</option></select>
@@ -106,6 +153,7 @@
                             <div class="field-row-2">
                                 <label class="field"><span class="label">Largura do painel (px)</span><input type="number" name="panel_width" value="{{ report.panel_width }}" min="400" max="4000"></label>
                                 <label class="field"><span class="label">Altura do painel (px)</span><input type="number" name="panel_height" value="{{ report.panel_height }}" min="300" max="4000"></label>
+                            </div>
                             </div>
                         </div>
                     </section>
@@ -143,7 +191,8 @@
                     </section>
 
                     <div class="form-actions span-2">
-                        <button type="submit" name="then" value="preview" class="btn btn-outline btn-sm">Guardar e pré-visualizar</button>
+                        <button type="submit" name="then" value="preview" class="btn btn-outline btn-sm" data-kind="grafana">Guardar e pré-visualizar</button>
+                        <button type="submit" name="then" value="preview" class="btn btn-outline btn-sm" data-kind="sql script">Guardar e testar no agente</button>
                         <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
                     </div>
                 </form>
@@ -163,6 +212,9 @@
     'panels': panels,
     'recipients': recipients,
     'channels': channels,
+    'kind': report.kind or 'grafana',
+    'queries': queries,
+    'connections': connections,
     'periods': periods,
     'dashboardsUrl': url_for('api_dashboards', source_id=0) | replace('/0/dashboards', ''),
     'previewUrl': url_for('report_preview', report_id=report.id) if report.id else None,

@@ -1,4 +1,4 @@
--- Esquema inicial do REPORTING TOOL
+-- Esquema inicial do REPORT SERVICE
 
 CREATE TABLE settings (
     key   text PRIMARY KEY,

@@ -1,0 +1,13 @@
+# Agente do REPORT SERVICE, na máquina que chega às bases de dados (ex. zproxy15).
+# Só precisa de HTTPS de saída para a app. Configuração no .env ao lado (ver .env.example).
+services:
+  agent:
+    image: ghcr.io/h3-lab/report-service-agent:${AGENT_VERSION:-1.1.0}
+    restart: unless-stopped
+    env_file: .env
+    # Se a CA da app é interna: monte o certificado e defina CA_BUNDLE=/certs/ca.pem
+    # volumes:
+    #   - ./ca.pem:/certs/ca.pem:ro
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}

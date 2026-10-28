@@ -6,11 +6,35 @@
                         <h1>Reports</h1>
                         <p>{{ 'Reports de todas as equipas.' if acc.admin else 'Reports da equipa ' ~ acc.teams | join(', ') ~ '.' }}</p>
                     </div>
-                    <a class="btn btn-primary btn-sm" href="{{ url_for('report_form') }}">
+                    <a class="btn btn-primary btn-sm" href="{{ url_for('report_form', categoria=selected[0]) if selected | length == 1 and selected[0] else url_for('report_form') }}">
                         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
                         Novo report
                     </a>
                 </div>
+
+                {% if categories %}
+                {% set names = selected | map('default', 'Sem categoria', true) | list %}
+                <form class="cat-filter" method="get" action="{{ url_for('reports') }}">
+                    <details class="dropdown">
+                        <summary class="btn btn-outline btn-sm">
+                            <svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>
+                            Categorias: <strong>{{ 'Todas' if not names else names | join(', ') if names | length <= 2 else names | length ~ ' categorias' }}</strong>
+                            <svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+                        </summary>
+                        <div class="dropdown-menu">
+                            <label class="check-row"><input type="checkbox" data-all{% if not selected %} checked{% endif %}><span>Todas</span><span class="count">{{ total }}</span></label>
+                            <hr>
+                            {% for c in categories %}
+                            <label class="check-row"><input type="checkbox" name="categoria" value="{{ c }}"{% if c in selected %} checked{% endif %}><span>{{ c }}</span><span class="count">{{ counts[c] }}</span></label>
+                            {% endfor %}
+                            {% if counts[''] %}
+                            <label class="check-row"><input type="checkbox" name="categoria" value=""{% if '' in selected %} checked{% endif %}><span class="muted">Sem categoria</span><span class="count">{{ counts[''] }}</span></label>
+                            {% endif %}
+                            <div class="dropdown-actions"><button type="submit" class="btn btn-primary btn-sm">Aplicar</button></div>
+                        </div>
+                    </details>
+                </form>
+                {% endif %}
 
                 <section class="card">
                     <div class="table-wrap">
@@ -19,7 +43,7 @@
                             <tbody>
                             {% for r in reports %}
                                 <tr>
-                                    <td><a href="{{ url_for('report_form', report_id=r.id) }}"><strong>{{ r.name }}</strong></a><small class="sub">{{ r.dashboard_title or r.dashboard_uid }}</small><small class="sub">{{ r.source_name }}</small></td>
+                                    <td><a href="{{ url_for('report_form', report_id=r.id) }}"><strong>{{ r.name }}</strong></a>{% if selected | length != 1 and r.category %}<small class="sub">{{ r.category }}</small>{% endif %}{% if r.kind == 'grafana' %}<small class="sub">{{ r.dashboard_title or r.dashboard_uid }}</small><small class="sub">{{ r.source_name }}</small>{% else %}<small class="sub">{{ 'Consultas SQL' if r.kind == 'sql' else 'Script' }} · agente {{ r.agent_name }}</small>{% endif %}</td>
                                     <td><span class="badge">{{ r.team }}</span></td>
                                     <td>{{ periods[r.period] }}</td>
                                     <td>{% if r.active %}{{ describe_schedule(r.schedule) }}{% else %}<span class="muted">Inativo</span>{% endif %}</td>

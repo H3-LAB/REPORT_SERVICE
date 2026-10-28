@@ -3,7 +3,7 @@
     python legacy_import.py /caminho/GRAFANA_REPORTS [--team OPERADOR] [--dry-run]
 
 Por cada pasta (tsa, pki, signstash, …) e cada dashboard que o seu ``dashboards_report.py`` processa,
-cria um report com os painéis, as variáveis, o tema, o período de cada painel, o logo e os destinatários.
+cria um report (categoria = nome da pasta) com os painéis, as variáveis, o tema, o período de cada painel, o logo e os destinatários.
 Cria também a fonte Grafana (sem token: o admin introduz-o) e o canal SMTP. Os reports ficam inativos e
 sem agendamento, para não enviarem em duplicado com o cron antigo; corre de novo sem duplicar.
 """
@@ -133,13 +133,13 @@ def main():
                         (os.path.splitext(os.path.basename(logo_path))[0],
                          'image/png' if logo_path.lower().endswith('.png') else 'image/jpeg', data)).fetchone()['id']
                 report_id = conn.execute(
-                    '''INSERT INTO reports (name, team, source_id, dashboard_uid, dashboard_slug, dashboard_title,
+                    '''INSERT INTO reports (name, team, category, source_id, dashboard_uid, dashboard_slug, dashboard_title,
                                             variables, period, theme, per_page, orientation, output, panel_width,
                                             panel_height, logo_id, title, subject, created_by, updated_by)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 2, 'portrait', 'pdf', %s, %s, %s, %s, %s,
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 2, 'portrait', 'pdf', %s, %s, %s, %s, %s,
                                'importação', 'importação') RETURNING id''',
                     # Título provisório a partir do slug; o editor guarda o título real do Grafana
-                    (name, args.team, source['id'], first['uid'], first['slug'],
+                    (name, args.team, group.upper().replace('_', ' '), source['id'], first['uid'], first['slug'],
                      first['slug'].replace('-', ' ').capitalize(),
                      Jsonb(first['variables']), period, first['theme'], first['width'], first['height'], logo_id,
                      name, mail['email_subject'])).fetchone()['id']

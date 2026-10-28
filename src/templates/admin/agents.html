@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Agentes{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header">
+                    <h1>Agentes</h1>
+                    <p>Correm nas máquinas que chegam às bases de dados e geram aí os reports SQL e script. Só fazem pedidos HTTPS para esta app, com o token do agente.</p>
+                </div>
+
+                {% if new_token %}
+                <section class="card token-card">
+                    <div class="card-head"><h3>Token do agente {{ new_token.agent }}</h3><p>Copie agora: não volta a ser mostrado. Se o perder, gere um novo.</p></div>
+                    <pre class="code-block">{{ new_token.token }}</pre>
+                    <p class="muted">No servidor do agente, no <code>.env</code> ao lado do <code>docker-compose.yml</code>:</p>
+                    <pre class="code-block">REPORT_SERVICE_URL={{ app_url }}
+AGENT_TOKEN={{ new_token.token }}
+# Só se este agente puder correr scripts definidos na app
+ALLOW_SCRIPTS=false
+# Se a máquina sai pelo proxy
+HTTPS_PROXY=</pre>
+                </section>
+                {% endif %}
+
+                <section class="card">
+                    <form method="post" class="inline-form">
+                        <label class="field"><span class="label">Novo agente</span><input name="name" placeholder="zproxy15" maxlength="60" pattern="[A-Za-z0-9_.\-]{2,60}" required></label>
+                        <button type="submit" class="btn btn-primary btn-sm"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Criar e gerar token</button>
+                    </form>
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Agente</th><th>Estado</th><th>Máquina</th><th>Scripts</th><th>Ligações</th><th>Reports</th><th></th></tr></thead>
+                            <tbody>
+                            {% for a in agents %}
+                                <tr>
+                                    <td><strong>{{ a.name }}</strong>{% if a.version %}<small class="sub">versão {{ a.version }}</small>{% endif %}</td>
+                                    <td>{% if a.online %}<span class="pill pill-ok">ligado</span>{% elif a.last_seen_at %}<span class="pill pill-error">desligado</span><small class="sub">visto {{ a.last_seen_at | dt }}</small>{% else %}<span class="pill pill-muted">nunca ligou</span>{% endif %}</td>
+                                    <td>{{ a.hostname or '-' }}</td>
+                                    <td>{% if a.allow_scripts %}<span class="pill pill-warn">permitidos</span>{% elif a.allow_scripts is not none %}<span class="muted">não</span>{% else %}-{% endif %}</td>
+                                    <td>{{ a.connections }}</td>
+                                    <td>{{ a.reports }}</td>
+                                    <td><div class="row-actions">
+                                        <form method="post" action="{{ url_for('admin.agent_token', agent_id=a.id) }}" data-confirm="Gerar um token novo? O agente deixa de funcionar até receber o novo token."><button class="btn btn-outline btn-sm" type="submit">Novo token</button></form>
+                                        <form method="post" action="{{ url_for('admin.agent_delete', agent_id=a.id) }}" data-confirm="Apagar o agente {{ a.name }}?"><button class="btn btn-danger btn-sm" type="submit">Apagar</button></form>
+                                    </div></td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="7" class="empty">Nenhum agente. Crie um com o nome da máquina onde vai correr.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}

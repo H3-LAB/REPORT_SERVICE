@@ -53,6 +53,25 @@ document.addEventListener("submit", (event) => {
 window.addEventListener("pageshow", hideBusy);
 document.querySelectorAll("[data-flash]").forEach((node) => setTimeout(() => node.remove(), 4000));
 
+// ---------- Lista de reports: filtro de categorias ("Todas" exclui as outras; aplica ao fechar) ----------
+const catFilter = document.querySelector(".cat-filter");
+if (catFilter) {
+    const dropdown = catFilter.querySelector("details");
+    const all = catFilter.querySelector("[data-all]");
+    const boxes = [...catFilter.querySelectorAll("input[name=categoria]")];
+    const initial = new FormData(catFilter).getAll("categoria").join("\n");
+    catFilter.addEventListener("change", (event) => {
+        if (event.target === all) boxes.forEach((box) => { box.checked = false; });
+        all.checked = !boxes.some((box) => box.checked);
+    });
+    catFilter.addEventListener("submit", () => showBusy());
+    dropdown.addEventListener("toggle", () => {
+        if (!dropdown.open && new FormData(catFilter).getAll("categoria").join("\n") !== initial) catFilter.requestSubmit();
+    });
+    document.addEventListener("click", (event) => { if (dropdown.open && !dropdown.contains(event.target)) dropdown.open = false; });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") dropdown.open = false; });
+}
+
 // ---------- Admin: testar fonte e canal ----------
 document.querySelectorAll("[data-test-url]").forEach((button) => button.addEventListener("click", async () => {
     showBusy("A testar a ligação…");
@@ -260,13 +279,43 @@ if (reportData) {
     reportData.recipients.forEach((item) => $("recipients").append(recipientRow(item)));
     $("add-recipient").addEventListener("click", () => $("recipients").append(recipientRow()));
 
+    // Consultas SQL: folha, ligação e query, por ordem
+    function queryRow(item = {}) {
+        const row = el("div", {class: "query"});
+        const up = el("button", {type: "button", class: "btn btn-outline btn-sm", title: "Subir", onclick: () => row.previousElementSibling?.before(row)}, "↑");
+        const down = el("button", {type: "button", class: "btn btn-outline btn-sm", title: "Descer", onclick: () => row.nextElementSibling?.after(row)}, "↓");
+        row.append(
+            el("div", {class: "field-row-2"},
+                el("label", {class: "field"}, el("span", {class: "label"}, "Folha"), el("input", {"data-q": "sheet", value: item.sheet || "", maxlength: 31, placeholder: "UTILIZADORES"})),
+                el("label", {class: "field"}, el("span", {class: "label"}, "Ligação"), el("select", {"data-q": "connection_id"}, ...reportData.connections.map((c) =>
+                    el("option", {value: c.id, selected: String(c.id) === String(item.connection_id)}, `${c.name} (${c.agent_name})`))))),
+            el("label", {class: "field"}, el("span", {class: "label"}, "Query"), el("textarea", {"data-q": "query", class: "code-input", rows: 8, spellcheck: "false"}, item.query || "")),
+            el("div", {class: "row-actions"}, up, down, el("button", {type: "button", class: "btn btn-outline btn-sm", onclick: () => row.remove()}, "Remover")));
+        return row;
+    }
+    if (reportData.kind === "sql") reportData.queries.forEach((item) => $("queries").append(queryRow(item)));
+    $("add-query").addEventListener("click", () => $("queries").append(queryRow()));
+
+    // Tipo do report: mostra só os blocos desse tipo (os escondidos não vão no POST)
+    function syncKind() {
+        const kind = $("f-kind").value;
+        document.querySelectorAll("#report-form [data-kind]").forEach((node) => {
+            const on = node.dataset.kind.split(" ").includes(kind);
+            node.hidden = !on;
+            node.querySelectorAll("input, select, textarea").forEach((input) => { input.disabled = !on; });
+        });
+        if (kind === "sql" && !$("queries").children.length && reportData.connections.length) $("queries").append(queryRow());
+    }
+    $("f-kind").addEventListener("change", () => { syncKind(); syncForm(); });
+    syncKind();
+
     // Agendamento e formato: mostra só os campos que se aplicam
     function syncForm() {
         const freq = $("f-freq").value;
         document.querySelectorAll(".sched").forEach((node) => { node.hidden = !freq; });
         document.querySelector(".sched-weekly").hidden = freq !== "weekly";
         document.querySelector(".sched-monthly").hidden = freq !== "monthly";
-        document.querySelectorAll(".pdf-only").forEach((node) => { node.hidden = $("f-output").value !== "pdf"; });
+        document.querySelectorAll(".pdf-only").forEach((node) => { node.hidden = $("f-output").disabled || $("f-output").value !== "pdf"; });
     }
     $("f-freq").addEventListener("change", syncForm);
     $("f-output").addEventListener("change", syncForm);
@@ -277,6 +326,10 @@ if (reportData) {
         $("f-variables").value = JSON.stringify(variables);
         $("f-recipients").value = JSON.stringify([...document.querySelectorAll(".recipient")].map((row) =>
             Object.fromEntries([...row.querySelectorAll("[data-r]")].map((input) => [input.dataset.r, input.value]))));
+        const kind = $("f-kind").value;
+        $("f-queries").value = JSON.stringify(kind === "sql"
+            ? [...document.querySelectorAll(".query")].map((row) => Object.fromEntries([...row.querySelectorAll("[data-q]")].map((input) => [input.dataset.q, input.value])))
+            : kind === "script" ? [...document.querySelectorAll("[data-script-connection]:checked")].map((box) => ({connection_id: box.value})) : []);
     });
 
     renderSelected();

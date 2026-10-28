@@ -1,5 +1,5 @@
-# REPORTING TOOL: web (gunicorn) e scheduler usam esta imagem; muda só o comando.
-# Build:  docker build --build-arg VERSION=<versão> -t ghcr.io/h3-lab/reporting-tool:<versão> .
+# REPORT SERVICE: web (gunicorn) e scheduler usam esta imagem; muda só o comando.
+# Build:  docker build --build-arg VERSION=<versão> -t ghcr.io/h3-lab/report-service:<versão> .
 # Na rede da Multicert passar o proxy (não fica na imagem):
 #   --build-arg http_proxy=http://proxy.multicert.inet:8080 --build-arg https_proxy=http://proxy.multicert.inet:8080
 FROM python:3.12-slim

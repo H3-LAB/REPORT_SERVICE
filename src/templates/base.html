@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Reports{% endblock %} · Reporting Tool</title>
+    <title>{% block title %}Reports{% endblock %} · Report Service</title>
     <script>
         // Mesmo tema das outras apps: chave "theme", ou a preferência do sistema
         try {
@@ -25,7 +25,7 @@
                 <svg viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
             </div>
             <div>
-                <h1>REPORTING TOOL</h1>
+                <h1>REPORT SERVICE</h1>
                 <p>Reports agendados</p>
             </div>
         </div>
@@ -45,6 +45,14 @@
             <a href="{{ url_for('admin.sources') }}" class="nav-item{% if page == 'sources' %} active{% endif %}">
                 <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
                 <span>Fontes de dados</span>
+            </a>
+            <a href="{{ url_for('admin.agents') }}" class="nav-item{% if page == 'agents' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/></svg>
+                <span>Agentes</span>
+            </a>
+            <a href="{{ url_for('admin.connections') }}" class="nav-item{% if page == 'connections' %} active{% endif %}">
+                <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v8c0 1.66 3.13 3 7 3"/><path d="M19 5v5"/><path d="m15 19 2 2 4-4"/></svg>
+                <span>Ligações BD</span>
             </a>
             <a href="{{ url_for('admin.channels') }}" class="nav-item{% if page == 'channels' %} active{% endif %}">
                 <svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
@@ -110,7 +118,7 @@
                 <div class="footer-icon">
                     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
                 </div>
-                <span>REPORTING TOOL</span>
+                <span>REPORT SERVICE</span>
             </div>
             <p>© <span id="year"></span> - Powered by: PSS · v{{ app_version }}</p>
         </footer>

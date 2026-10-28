@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ connection.name or 'Nova ligação' }}{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>{{ connection.name or 'Nova ligação' }}</h1><p><a href="{{ url_for('admin.connections') }}">Ligações BD</a></p></div>
+                    {% if connection.id %}
+                    <div class="row-actions">
+                        <form method="post" action="{{ url_for('admin.connection_delete', connection_id=connection.id) }}" data-confirm="Apagar esta ligação?"><button class="btn btn-danger btn-sm" type="submit">Apagar</button></form>
+                    </div>
+                    {% endif %}
+                </div>
+                <form method="post" class="card narrow-card form" autocomplete="off">
+                    <label class="field"><span class="label">Nome</span><input name="name" value="{{ connection.name or '' }}" maxlength="100" placeholder="onlinestore" required></label>
+                    <label class="field"><span class="label">Agente</span>
+                        <select name="agent_id">{% for a in agents %}<option value="{{ a.id }}"{% if a.id == connection.agent_id %} selected{% endif %}>{{ a.name }}</option>{% else %}<option value="">Crie primeiro um agente</option>{% endfor %}</select>
+                        <small>A máquina que chega a esta base de dados.</small></label>
+                    <div class="field-row-2">
+                        <label class="field"><span class="label">Host</span><input name="host" value="{{ connection.host or '' }}" placeholder="10.51.48.182" required></label>
+                        <label class="field"><span class="label">Porta</span><input type="number" name="port" value="{{ connection.port }}" min="1" max="65535"></label>
+                    </div>
+                    <label class="field"><span class="label">Base de dados (PostgreSQL)</span><input name="database" value="{{ connection.database or '' }}" required></label>
+                    <div class="field-row-2">
+                        <label class="field"><span class="label">Utilizador</span><input name="username" value="{{ connection.username or '' }}" required autocomplete="off"></label>
+                        <label class="field"><span class="label">Password</span><input type="password" name="password" placeholder="{{ 'Guardada. Deixe vazio para manter.' if connection.id else '' }}" autocomplete="new-password"></label>
+                    </div>
+                    <p class="muted">Use um utilizador só de leitura. O agente abre a ligação em modo só de leitura, mas o utilizador da base de dados é a proteção que conta.</p>
+                    <div class="form-actions"><button type="submit" class="btn btn-primary btn-sm">Guardar</button></div>
+                </form>
+            </section>
+{% endblock %}
