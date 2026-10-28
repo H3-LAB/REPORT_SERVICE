@@ -15,7 +15,7 @@ services:
       retries: 6
 
   web:
-    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.0}
+    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.1}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -27,7 +27,7 @@ services:
         condition: service_healthy
 
   scheduler:
-    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.0}
+    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.1}
     restart: unless-stopped
     command: ["python", "scheduler.py"]
     env_file: .env
@@ -35,6 +35,29 @@ services:
       DATABASE_URL: postgresql://report_service:${POSTGRES_PASSWORD}@db:5432/report_service
     healthcheck:
       disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Porta só para os agentes, com HTTPS e sem passar pelo nginx: só responde à API dos agentes.
+  # Precisa de certs/server.crt e certs/server.key (ver README).
+  agent-api:
+    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.1}
+    restart: unless-stopped
+    command: ["gunicorn", "--bind", "0.0.0.0:10050", "--certfile", "/certs/server.crt", "--keyfile", "/certs/server.key",
+              "--workers", "2", "--timeout", "300", "--access-logfile", "-", "app:app"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://report_service:${POSTGRES_PASSWORD}@db:5432/report_service
+      AGENT_API_ONLY: "1"
+    ports:
+      - "${AGENT_API_PORT:-10050}:10050"
+    volumes:
+      - ./certs:/certs:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; urllib.request.urlopen('https://127.0.0.1:10050/health', context=ssl._create_unverified_context(), timeout=4)"]
+      interval: 30s
+      timeout: 5s
     depends_on:
       db:
         condition: service_healthy

@@ -28,13 +28,14 @@ Quem não está em nenhum vê "Sem acesso" e sai da sessão; o próximo login l�
 Para reports que leem bases de dados a que a app não chega: um **agente** corre na máquina que chega (ex. zproxy15) e só faz pedidos HTTPS de saída para a app.
 
 1. **Administração → Agentes**: criar o agente (ex. `zproxy15`) e copiar o token (só aparece uma vez).
-2. Na máquina do agente, com `agent/docker-compose.yml` e o `.env` (ver `agent/.env.example`):
+2. Na máquina do agente, com `agent/docker-compose.yml` e o `.env` (ver `agent/.env.example` e "Porta dos agentes" abaixo):
    ```
-   REPORT_SERVICE_URL=https://<servidor>/report-service
+   REPORT_SERVICE_URL=https://report-service.corp.multicert.com:10050
+   REPORT_SERVICE_IP=<ip do servidor>
    AGENT_TOKEN=rta_...
    AGENT_HOSTNAME=zproxy15
    ALLOW_SCRIPTS=false
-   HTTPS_PROXY=            # se sai pelo proxy
+   NO_PROXY=report-service.corp.multicert.com
    ```
    `docker compose up -d`. Em Agentes passa a "ligado".
 3. **Administração → Ligações BD**: host, porta, base, utilizador e password (cifrada), e o agente que lá chega. Use utilizadores só de leitura; o agente abre as transações em `READ ONLY`.
@@ -47,6 +48,26 @@ O envio (mail/NS/Telegram), o agendamento, o reenvio e a retenção são os mesm
 
 Build do agente: `docker build --build-arg VERSION=<versão> -t ghcr.io/h3-lab/report-service-agent:<versão> agent/`
 
+## Porta dos agentes (10050, HTTPS)
+
+Os agentes falam diretamente com o servidor, cifrado e sem passar pelo virtualhost do nginx: o contentor `agent-api` escuta em HTTPS na porta `AGENT_API_PORT` (10050) e **só** responde à API dos agentes (`/api/agente/*` e `/health`); a interface e o login não estão nessa porta.
+
+Nome: `report-service.corp.multicert.com`, só usado pelos agentes (não precisa de estar no DNS: o compose do agente aponta-o para `REPORT_SERVICE_IP`). Coberto pelo wildcard `*.corp.multicert.com` da Sectigo.
+
+1. Confirme que a porta está livre no servidor (o Zabbix Agent também usa a 10050): `ss -tlnp | grep 10050`.
+2. Certificado em `certs/` ao lado do `docker-compose.yml`, copiado do nginx:
+   ```
+   mkdir -p certs
+   cp <fullchain do wildcard> certs/server.crt   # certificado + intermédios da Sectigo, por esta ordem
+   cp <chave do wildcard> certs/server.key
+   sudo chown 10001 certs/server.key && chmod 600 certs/server.key   # o contentor corre com o utilizador 10001
+   ```
+   Sem os intermédios no `server.crt`, os agentes recusam a ligação. Teste: `curl https://report-service.corp.multicert.com:10050/health --resolve report-service.corp.multicert.com:10050:<ip>`.
+3. Firewall do servidor: abrir a 10050 só aos IPs dos agentes.
+4. Nos agentes (`agent/.env`): `REPORT_SERVICE_URL=https://report-service.corp.multicert.com:10050`, `REPORT_SERVICE_IP=<ip do servidor>` e, se usam proxy, o nome em `NO_PROXY`.
+
+Quando renovar o wildcard no nginx, copie-o de novo para `certs/` e faça `docker compose restart agent-api`.
+
 ## Arranque
 
 ```
@@ -54,7 +75,7 @@ cp .env.example .env    # preencher POSTGRES_PASSWORD, SECRET_KEY, ENCRYPTION_KE
 docker compose up -d
 ```
 
-Três contentores: `db` (PostgreSQL, volume `report-service-db`), `web` (gunicorn) e `scheduler`. Corra **um só** scheduler: é ele que envia os reports agendados. As migrações aplicam-se sozinhas ao arrancar.
+Quatro contentores: `db` (PostgreSQL, volume `report-service-db`), `web` (gunicorn), `scheduler` e `agent-api` (porta dos agentes, ver abaixo). Corra **um só** scheduler: é ele que envia os reports agendados. As migrações aplicam-se sozinhas ao arrancar.
 
 **Não perca a `ENCRYPTION_KEY`**: sem ela os tokens e passwords guardados ficam ilegíveis e têm de ser introduzidos de novo.
 

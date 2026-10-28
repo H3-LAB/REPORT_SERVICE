@@ -1,11 +1,15 @@
 # Agente do REPORT SERVICE, na máquina que chega às bases de dados (ex. zproxy15).
-# Só precisa de HTTPS de saída para a app. Configuração no .env ao lado (ver .env.example).
+# Só precisa de HTTPS de saída para o servidor (porta 10050). Configuração no .env ao lado (ver .env.example).
 services:
   agent:
     image: ghcr.io/h3-lab/report-service-agent:${AGENT_VERSION:-1.1.0}
     restart: unless-stopped
     env_file: .env
-    # Se a CA da app é interna: monte o certificado e defina CA_BUNDLE=/certs/ca.pem
+    # report-service.corp.multicert.com só existe para os agentes (não está no DNS): aponta para o IP do servidor.
+    # Coberto pelo certificado *.corp.multicert.com do servidor.
+    extra_hosts:
+      - "report-service.corp.multicert.com:${REPORT_SERVICE_IP:?defina REPORT_SERVICE_IP no .env}"
+    # Só se o certificado do servidor for de uma CA interna: monte-a e defina CA_BUNDLE=/certs/ca.pem
     # volumes:
     #   - ./ca.pem:/certs/ca.pem:ro
     logging:

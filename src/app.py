@@ -267,6 +267,12 @@ def create_app():
     app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024
     # Atrás do nginx: esquema, host e prefixo vêm dos headers X-Forwarded-*
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_prefix=1)
+    if os.getenv('AGENT_API_ONLY') == '1':
+        # Porta dos agentes (ex. 10050 com TLS, sem nginx): só a API dos agentes. Antes do login, para não o expor
+        @app.before_request
+        def agent_api_only():
+            if request.endpoint not in ('health', 'agent_api.claim', 'agent_api.result'):
+                abort(404)
     init_auth(app)
     db.migrate()
 

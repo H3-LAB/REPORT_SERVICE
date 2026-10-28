@@ -328,6 +328,14 @@ class WebTest(unittest.TestCase):
         runner.housekeeping()
         self.assertEqual(run_row(stale['id'])['status'], 'erro')
 
+    def test_agent_port_only_serves_agent_api(self):
+        with mock.patch.dict(os.environ, {'AGENT_API_ONLY': '1'}):
+            client = reporting.create_app().test_client()
+        self.assertEqual(client.get('/').status_code, 404)
+        self.assertEqual(client.get('/admin/agentes').status_code, 404)
+        self.assertEqual(client.get('/health').status_code, 200)
+        self.assertEqual(client.post('/api/agente/trabalho', headers={'Authorization': 'Bearer rta_x'}).status_code, 401)
+
     def test_agent_scripts(self):
         import agent
         job = {'run_id': 1, 'kind': 'script', 'report': 'R', 'file_stem': 'R_2026', 'timezone': 'Europe/Lisbon',
