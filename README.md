@@ -49,6 +49,15 @@ O envio (mail/NS/Telegram), o agendamento, o reenvio e a retenção são os mesm
 
 Build do agente: `docker build --build-arg VERSION=<versão> -t ghcr.io/h3-lab/report-service-agent:<versão> agent/`
 
+## Assinaturas e variáveis da mensagem
+
+- No report, os botões por baixo da mensagem inserem as variáveis (`{gerado_em}`, `{inicio}`, `{fim}`, `{report}`, `{ficheiro}`) no assunto ou na mensagem, onde estiver o cursor.
+- **Administração → Assinaturas**: assinatura em HTML, escrita no editor, colada, ou em código. As imagens inseridas ou coladas ficam embebidas. Cada report escolhe a sua em "Assinatura (e-mail)".
+- **SMTP**: o e-mail vai em HTML com as imagens como partes inline (`cid:`), mais a versão em texto.
+- **NS**: com "Mensagem em HTML" no canal, o `<Body>` vai em HTML. O NS não tem imagens inline: vão por URL da app (`PUBLIC_URL/assinatura/<id>/<n>`, sem login), por isso defina `PUBLIC_URL` (ex. `https://monit.corp.multicert.com/report-service`). Os destinatários têm de chegar a esse endereço.
+- Telegram: sem assinatura.
+- O teste do canal (Canais → canal → Enviar teste) deixa escolher a assinatura.
+
 ## Porta dos agentes (10050, HTTPS)
 
 Os agentes falam diretamente com o servidor, cifrado e sem passar pelo virtualhost do nginx: o contentor `agent-api` escuta em HTTPS na porta `AGENT_API_PORT` (10050) e **só** responde à API dos agentes (`/api/agente/*` e `/health`); a interface e o login não estão nessa porta.

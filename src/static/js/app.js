@@ -99,6 +99,66 @@ if (channelTest) channelTest.addEventListener("submit", async (event) => {
     }
 });
 
+// ---------- Report: variáveis inseridas no assunto ou na mensagem (o último que teve o foco) ----------
+const varChips = $("var-chips");
+if (varChips) {
+    let target = document.querySelector("[name=message]");
+    document.querySelectorAll("[name=subject], [name=message]").forEach((field) => field.addEventListener("focus", () => { target = field; }));
+    varChips.addEventListener("click", (event) => {
+        const chip = event.target.closest("[data-var]");
+        if (!chip) return;
+        target.setRangeText(chip.dataset.var, target.selectionStart, target.selectionEnd, "end");
+        target.focus();
+    });
+}
+
+// ---------- Assinaturas: editor num iframe sem scripts (o HTML colado não corre aqui) ----------
+const sigEditor = $("sig-editor");
+if (sigEditor) {
+    const source = $("sig-html");
+    const doc = sigEditor.contentDocument;
+    doc.open();
+    doc.write('<!doctype html><html><body style="margin:12px;font-family:Arial,sans-serif;font-size:14px"></body></html>');
+    doc.close();
+    doc.body.innerHTML = source.value;
+    doc.designMode = "on";
+    let raw = false;
+    const insertImage = (file) => {
+        if (!file || !file.type.startsWith("image/")) return;
+        const reader = new FileReader();
+        reader.onload = () => doc.execCommand("insertImage", false, reader.result);
+        reader.readAsDataURL(file);
+    };
+    // Uma imagem colada (print, cópia de imagem) fica embebida
+    doc.addEventListener("paste", (event) => {
+        const file = [...event.clipboardData.files].find((item) => item.type.startsWith("image/"));
+        if (file) {
+            event.preventDefault();
+            insertImage(file);
+        }
+    });
+    $("sig-image").addEventListener("change", (event) => {
+        insertImage(event.target.files[0]);
+        event.target.value = "";
+    });
+    document.querySelectorAll("[data-cmd]").forEach((button) => button.addEventListener("click", () => {
+        const url = button.dataset.cmd === "createLink" && prompt("Endereço da ligação", "https://");
+        if (button.dataset.cmd !== "createLink" || url) doc.execCommand(button.dataset.cmd, false, url || null);
+        sigEditor.contentWindow.focus();
+    }));
+    $("sig-source").addEventListener("click", (event) => {
+        raw = !raw;
+        if (raw) source.value = doc.body.innerHTML;
+        else doc.body.innerHTML = source.value;
+        source.hidden = !raw;
+        sigEditor.hidden = raw;
+        event.currentTarget.setAttribute("aria-pressed", raw);
+    });
+    $("signature-form").addEventListener("submit", () => {
+        if (!raw) source.value = doc.body.innerHTML;
+    });
+}
+
 // ---------- Configurações: pré-visualização da cor (só é guardada com "Guardar") ----------
 const accentInput = $("accentInput");
 if (accentInput) {

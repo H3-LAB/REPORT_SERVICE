@@ -150,10 +150,12 @@ def execute(run):
         values = {k: v.astimezone(APP_TIMEZONE) if isinstance(v, datetime) else v for k, v in values.items()}  # None: sem período
         subject = fill_text(report['subject'] or report['title'] or report['name'], values)
         message = fill_text(report['message'], values)
+        signature = report['signature_id'] and db.one('SELECT id, html FROM signatures WHERE id = %s',
+                                                       (report['signature_id'],))
         for channel in recipients:
             try:
                 detail = send(channel, channel['target'], subject, message, result['file_name'],
-                              result['mime'], result['data'])
+                              result['mime'], result['data'], signature)
                 log.add(f"{channel['name']}: {detail}", 'ok')
                 sent += 1
             except DeliveryError as exc:

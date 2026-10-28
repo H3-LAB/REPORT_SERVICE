@@ -15,7 +15,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import db
 from agents import bp as agent_api
 from auth import access, can_see_team, current_access, current_user, init_auth, username
-from delivery import CHANNEL_KINDS, recipients_text
+from delivery import CHANNEL_KINDS, recipients_text, signature_images
 from periods import FREQUENCIES, PERIODS, WEEKDAYS, describe_schedule, next_run
 from runner import AGENT_KINDS, APP_TIMEZONE, Log, generate
 from sources import SourceError, open_source
@@ -109,6 +109,7 @@ def validate_report(form):
         'title': (form.get('title') or '').strip()[:200],
         'subject': (form.get('subject') or '').strip()[:200],
         'message': (form.get('message') or '').strip()[:2000],
+        'signature_id': number('signature_id', 0, 2**31, 0) or None,
         'active': form.get('active') == '1',
         'agent_id': None,
         'script_lang': None,
@@ -129,6 +130,8 @@ def validate_report(form):
         errors.append('Escolha uma das suas equipas.')
     if report['period'] not in PERIODS and not (kind in AGENT_KINDS and report['period'] == NO_PERIOD):
         errors.append('Escolha o período.')
+    if report['signature_id'] and not db.one('SELECT 1 FROM signatures WHERE id = %s', (report['signature_id'],)):
+        errors.append('A assinatura escolhida já não existe.')
     if report['active'] and not report['schedule']:
         errors.append('Um report ativo precisa de agendamento.')
     clean_panels, clean_queries = [], []
@@ -337,6 +340,7 @@ def create_app():
                 'sources': db.query('SELECT id, name, base_url FROM data_sources ORDER BY name'),
                 'channels': db.query('SELECT id, name, kind FROM channels ORDER BY name'),
                 'logos': db.query('SELECT id, name FROM logos ORDER BY name'),
+                'signatures': db.query('SELECT id, name FROM signatures ORDER BY name'),
                 'periods': PERIODS, 'frequencies': FREQUENCIES, 'weekdays': WEEKDAYS, 'channel_kinds': CHANNEL_KINDS}
 
     @app.route('/reports/novo', methods=['GET', 'POST'])
@@ -387,7 +391,7 @@ def create_app():
         copy = {k: report[k] for k in ('kind', 'agent_id', 'script_lang', 'script', 'team', 'category', 'source_id', 'dashboard_uid', 'dashboard_slug', 'dashboard_title',
                                        'variables', 'period', 'theme', 'per_page', 'orientation', 'output',
                                        'panel_width', 'panel_height', 'logo_id', 'title', 'subject', 'message',
-                                       'schedule')}
+                                       'signature_id', 'schedule')}
         copy.update(name=f"{report['name']} (cópia)", active=False)
         panels = db.query('SELECT panel_id, title, period FROM report_panels WHERE report_id = %s ORDER BY position',
                           (report_id,))
@@ -518,6 +522,15 @@ def create_app():
             return jsonify(source_client(source_id).dashboard(uid))
         except SourceError as exc:
             return jsonify({'error': str(exc)}), 502
+
+    @app.route('/assinatura/<int:signature_id>/<int:n>')
+    def signature_image(signature_id, n):
+        """Imagens das assinaturas no HTML do NS: sem login, porque são abertas pelos destinatários."""
+        row = db.one('SELECT html FROM signatures WHERE id = %s', (signature_id,))
+        images = signature_images(row['html']) if row else []
+        if n >= len(images):
+            abort(404)
+        return Response(images[n][1], mimetype=images[n][0], headers={'Cache-Control': 'public, max-age=86400'})
 
     app.jinja_env.globals.update(recipients_text=recipients_text, channel_kinds=CHANNEL_KINDS)
     return app

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ signature.name or 'Nova assinatura' }}{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>{{ signature.name or 'Nova assinatura' }}</h1><p><a href="{{ url_for('admin.signatures') }}">Assinaturas</a></p></div>
+                    {% if signature.id %}
+                    <form method="post" action="{{ url_for('admin.signature_delete', signature_id=signature.id) }}" data-confirm="Apagar esta assinatura? Os reports que a usam ficam sem assinatura."><button class="btn btn-danger btn-sm" type="submit">Apagar</button></form>
+                    {% endif %}
+                </div>
+                <form method="post" class="card form" id="signature-form">
+                    <label class="field"><span class="label">Nome</span><input name="name" value="{{ signature.name or '' }}" maxlength="100" required placeholder="Multicert - Operações"></label>
+                    <div class="field">
+                        <span class="label">Assinatura</span>
+                        <div class="sig-toolbar">
+                            <button type="button" class="btn btn-outline btn-sm" data-cmd="bold" title="Negrito"><b>B</b></button>
+                            <button type="button" class="btn btn-outline btn-sm" data-cmd="italic" title="Itálico"><i>I</i></button>
+                            <button type="button" class="btn btn-outline btn-sm" data-cmd="underline" title="Sublinhado"><u>S</u></button>
+                            <button type="button" class="btn btn-outline btn-sm" data-cmd="createLink" title="Ligação">Ligação</button>
+                            <label class="btn btn-outline btn-sm">Inserir imagem<input type="file" id="sig-image" accept="image/png,image/jpeg,image/gif" hidden></label>
+                            <button type="button" class="btn btn-outline btn-sm" id="sig-source" aria-pressed="false">HTML</button>
+                        </div>
+                        <iframe id="sig-editor" class="sig-editor" sandbox="allow-same-origin" title="Editor da assinatura"></iframe>
+                        <textarea name="html" id="sig-html" class="sig-html" rows="14" hidden>{{ signature.html }}</textarea>
+                        <small>Escreva aqui, cole uma assinatura (por exemplo de um e-mail aberto no browser) ou carregue em HTML para colar o código. As imagens inseridas ou coladas como imagem ficam embebidas no e-mail. Imagens por URL (https://…) só aparecem se o destinatário chegar a esse endereço. Para mudar o tamanho de uma imagem, use <code>width="…"</code> em HTML.</small>
+                    </div>
+                    <div class="form-actions"><button type="submit" class="btn btn-primary btn-sm">Guardar</button></div>
+                </form>
+            </section>
+{% endblock %}

@@ -187,8 +187,16 @@
                         <div id="recipients" class="recipients"></div>
                         <div class="form">
                             <label class="field"><span class="label">Assunto (e-mail) / legenda (Telegram)</span><input name="subject" value="{{ report.subject or '' }}" maxlength="200" placeholder="Por defeito, o título do report"></label>
-                            <label class="field"><span class="label">Mensagem</span><textarea name="message" rows="3" maxlength="2000" placeholder="Segue em anexo o relatório {report} gerado em {gerado_em}.">{{ report.message or '' }}</textarea>
-                                <small>Variáveis no assunto e na mensagem: <code>{gerado_em}</code> (2026-10-28 08:00:03), <code>{inicio}</code> e <code>{fim}</code> (período), <code>{report}</code>, <code>{ficheiro}</code>. Com formato: <code>{gerado_em:%d/%m/%Y %H:%M}</code>, <code>{inicio:%d/%m}</code>.</small></label>
+                            <label class="field"><span class="label">Mensagem</span><textarea name="message" rows="3" maxlength="2000" placeholder="Segue em anexo o relatório {report} gerado em {gerado_em}.">{{ report.message or '' }}</textarea></label>
+                            <div class="var-chips" id="var-chips">
+                                <span class="label">Inserir no assunto ou na mensagem:</span>
+                                {% for var, label in [('gerado_em', 'Gerado em'), ('gerado_em:%d/%m/%Y', 'Data'), ('gerado_em:%H:%M', 'Hora'), ('inicio', 'Início do período'), ('fim', 'Fim do período'), ('report', 'Nome do report'), ('ficheiro', 'Ficheiro')] %}
+                                <button type="button" class="chip" data-var="{{ '{' ~ var ~ '}' }}" title="{{ '{' ~ var ~ '}' }}">{{ label }}</button>
+                                {% endfor %}
+                                <small>Outros formatos: <code>{gerado_em:%d/%m/%Y %H:%M}</code>, <code>{inicio:%d/%m}</code>.</small>
+                            </div>
+                            <label class="field"><span class="label">Assinatura (e-mail)</span><select name="signature_id"><option value="">Sem assinatura</option>{% for s in signatures %}<option value="{{ s.id }}"{% if s.id == report.signature_id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+                                <small>Criadas em Administração → Assinaturas. Não vai no Telegram.</small></label>
                         </div>
                     </section>
 

@@ -1,4 +1,5 @@
-"""Administração: fontes de dados, agentes, ligações a bases de dados, canais, logos, configurações e auditoria
+"""Administração: fontes de dados, agentes, ligações a bases de dados, canais, logos, assinaturas, configurações e
+auditoria
 (só ``<raiz>/ADMIN``)."""
 
 import io
@@ -15,7 +16,7 @@ from psycopg.types.json import Jsonb
 import db
 from agents import new_token
 from auth import admin_required, username
-from delivery import CHANNEL_FIELDS, CHANNEL_KINDS, CHANNEL_SECRET, DeliveryError, send
+from delivery import CHANNEL_FIELDS, CHANNEL_KINDS, CHANNEL_SECRET, EMAIL_FONT, DeliveryError, send
 from sources import KINDS, SourceError, open_source
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -28,6 +29,9 @@ ACCENT_PALETTE = (
 HEX_COLOR = re.compile(r'#[0-9a-f]{6}')
 URL = re.compile(r'https?://\S+')
 LOGO_MAX_BYTES = 1024 * 1024
+AGENT_NAME = re.compile(r'[A-Za-z0-9_.-]{2,60}')
+# Cabe no MAX_CONTENT_LENGTH (2 MB) do formulário, com as imagens em base64
+SIGNATURE_MAX_CHARS = 1_800_000
 
 
 def _delete(table, row_id, label, back, feminine=False):
@@ -150,7 +154,7 @@ def agents():
     if request.method == 'GET':
         return _agents_page()
     name = request.form.get('name', '').strip()[:60]
-    if not re.fullmatch(r'[A-Za-z0-9_.-]{2,60}', name):
+    if not AGENT_NAME.fullmatch(name):
         flash('Nome do agente: letras, números, ponto, hífen ou _ (ex. zproxy15).', 'error')
         return _agents_page(status=400)
     token, digest = new_token()
@@ -162,6 +166,27 @@ def agents():
     db.audit(username(), 'agente criado', name)
     # O token só aparece nesta resposta (não vai para a sessão)
     return _agents_page({'agent': name, 'token': token})
+
+
+@bp.post('/agentes/<int:agent_id>/nome')
+@admin_required
+def agent_rename(agent_id):
+    # O token não muda: o agente continua a funcionar com o nome novo
+    old = db.one('SELECT name FROM agents WHERE id = %s', (agent_id,))
+    if not old:
+        abort(404)
+    name = request.form.get('name', '').strip()[:60]
+    if not AGENT_NAME.fullmatch(name):
+        flash('Nome do agente: letras, números, ponto, hífen ou _ (ex. zproxy15).', 'error')
+        return redirect(url_for('admin.agents'))
+    try:
+        db.execute('UPDATE agents SET name = %s WHERE id = %s', (name, agent_id))
+    except psycopg.errors.UniqueViolation:
+        flash('Já existe um agente com esse nome.', 'error')
+        return redirect(url_for('admin.agents'))
+    db.audit(username(), 'agente renomeado', old['name'], f'para {name}')
+    flash('Nome do agente alterado.')
+    return redirect(url_for('admin.agents'))
 
 
 @bp.post('/agentes/<int:agent_id>/token')
@@ -273,7 +298,8 @@ def channel_form(channel_id=None):
     existing = db.one('SELECT * FROM channels WHERE id = %s', (channel_id,)) if channel_id else None
     if channel_id and not existing:
         abort(404)
-    context = {'page': 'channels', 'kinds': CHANNEL_KINDS, 'fields': CHANNEL_FIELDS, 'secrets': CHANNEL_SECRET}
+    context = {'page': 'channels', 'kinds': CHANNEL_KINDS, 'fields': CHANNEL_FIELDS, 'secrets': CHANNEL_SECRET,
+               'signatures': db.query('SELECT id, name FROM signatures ORDER BY name')}
     if request.method == 'GET':
         blank = {'kind': request.args.get('tipo', 'smtp'), 'config': {
             'port': 25, 'api_url': 'https://api.telegram.org', 'sign_message': True, 'verify_tls': True}}
@@ -336,10 +362,11 @@ def channel_test(channel_id):
         target = {'to': [a for a in re.split(r'[\s,;]+', data.get('to', '')) if a], 'cc': []}
         if not target['to']:
             return jsonify({'ok': False, 'message': 'Indique um e-mail.'})
+    signature = db.one('SELECT id, html FROM signatures WHERE id = %s', (int(data.get('signature_id') or 0),))
     try:
         detail = send(channel, target, 'REPORT SERVICE: teste do canal',
                       f"Teste do canal \"{channel['name']}\" pedido por {username()}.",
-                      'teste.txt', 'text/plain', 'Teste do REPORT SERVICE.\n'.encode())
+                      'teste.txt', 'text/plain', 'Teste do REPORT SERVICE.\n'.encode(), signature)
     except DeliveryError as exc:
         return jsonify({'ok': False, 'message': str(exc)})
     db.audit(username(), 'canal testado', channel['name'], detail)
@@ -397,6 +424,57 @@ def logo_image(logo_id):
 def logo_delete(logo_id):
     # Os reports que o usavam ficam sem logo (ON DELETE SET NULL)
     return _delete('logos', logo_id, 'logo', 'admin.logos')
+
+
+# ---------- Assinaturas ----------
+
+@bp.route('/assinaturas')
+@admin_required
+def signatures():
+    rows = db.query('SELECT s.*, (SELECT count(*) FROM reports WHERE signature_id = s.id) AS reports '
+                    'FROM signatures s ORDER BY name')
+    return render_template('admin/signatures.html', page='signatures', signatures=rows, email_font=EMAIL_FONT)
+
+
+@bp.route('/assinaturas/nova', methods=['GET', 'POST'])
+@bp.route('/assinaturas/<int:signature_id>', methods=['GET', 'POST'])
+@admin_required
+def signature_form(signature_id=None):
+    existing = db.one('SELECT * FROM signatures WHERE id = %s', (signature_id,)) if signature_id else None
+    if signature_id and not existing:
+        abort(404)
+    if request.method == 'GET':
+        return render_template('admin/signature_form.html', page='signatures', signature=existing or {'html': ''})
+    name = request.form.get('name', '').strip()[:100]
+    html = request.form.get('html', '').strip()
+    signature = {**(existing or {}), 'name': name, 'html': html}
+    error = None
+    if not name or not html:
+        error = 'Indique o nome e a assinatura.'
+    elif len(html) > SIGNATURE_MAX_CHARS:
+        error = 'A assinatura é demasiado grande: use imagens mais pequenas (até ~1 MB no total).'
+    if not error:
+        try:
+            if existing:
+                db.execute('UPDATE signatures SET name = %s, html = %s, updated_at = now() WHERE id = %s',
+                           (name, html, signature_id))
+            else:
+                signature_id = db.one('INSERT INTO signatures (name, html) VALUES (%s, %s) RETURNING id',
+                                      (name, html))['id']
+            db.audit(username(), 'assinatura guardada', name)
+            flash('Assinatura guardada.')
+            return redirect(url_for('admin.signature_form', signature_id=signature_id))
+        except psycopg.errors.UniqueViolation:
+            error = 'Já existe uma assinatura com esse nome.'
+    flash(error, 'error')
+    return render_template('admin/signature_form.html', page='signatures', signature=signature), 400
+
+
+@bp.post('/assinaturas/<int:signature_id>/apagar')
+@admin_required
+def signature_delete(signature_id):
+    # Os reports que a usavam ficam sem assinatura (ON DELETE SET NULL)
+    return _delete('signatures', signature_id, 'assinatura', 'admin.signatures', feminine=True)
 
 
 # ---------- Configurações e auditoria ----------

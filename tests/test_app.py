@@ -5,6 +5,7 @@ Precisa de um PostgreSQL vazio em DATABASE_URL (a base é limpa no início) e do
         sh -c 'pip install -q openpyxl && python -m unittest discover -s ../tests'
 """
 
+import base64
 import io
 import json
 import os
@@ -130,6 +131,28 @@ class UnitTest(unittest.TestCase):
         self.assertIn('R&amp;D &lt;report&gt;', xml)
         self.assertIn('<mes:SignMessage>true</mes:SignMessage>', xml)
         self.assertIn('JVBERg==', xml)
+
+    def test_smtp_signature_has_inline_images(self):
+        image = base64.b64encode(png()).decode()
+        signature = {'id': 7, 'html': f'<p><b>Ana</b> &amp; Rui</p><img src="data:image/png;base64,{image}" width="200">'}
+        channel = {'kind': 'smtp', 'config': {'host': 'mail.invalid', 'sender': 'pss@x.com'}, 'secret': None}
+        with mock.patch('delivery.smtplib.SMTP') as smtp:
+            delivery.send(channel, {'to': ['a@x.com']}, 's', 'Olá\n<fim>', 'r.pdf', 'application/pdf', b'%PDF', signature)
+        mail = smtp.return_value.__enter__.return_value.send_message.call_args[0][0]
+        self.assertEqual(mail.get_content_type(), 'multipart/mixed')
+        text = mail.get_body(('plain',)).get_content()
+        self.assertIn('Ana & Rui', text)
+        html = mail.get_body(('html',)).get_content()
+        self.assertIn('Olá<br>', html)
+        self.assertIn('&lt;fim&gt;', html)
+        self.assertIn('src="cid:img0@report-service"', html)
+        inline = [part for part in mail.walk() if part['Content-ID'] == '<img0@report-service>']
+        self.assertEqual(inline[0].get_content(), png())
+        self.assertEqual([a.get_filename() for a in mail.iter_attachments()], ['r.pdf'])
+        # NS com HTML: as imagens vão pelo URL público da app
+        with mock.patch('delivery.PUBLIC_URL', 'https://app.x/report-service'):
+            body = delivery.html_body('m', signature, lambda n, mime, data: f'https://app.x/report-service/assinatura/7/{n}')
+        self.assertIn('src="https://app.x/report-service/assinatura/7/0"', body)
 
     def test_telegram_network_error_hides_token(self):
         import requests
@@ -414,6 +437,29 @@ class WebTest(unittest.TestCase):
         self.client.post('/admin/logos', data={'name': 'Vermelho', 'file': (io.BytesIO(png()), 'x.png')},
                          content_type='multipart/form-data')
         self.assertEqual(db.one("SELECT mime FROM logos WHERE name = 'Vermelho'")['mime'], 'image/png')
+
+    def test_signature_and_agent_rename(self):
+        self.login(ADMIN)
+        image = base64.b64encode(png()).decode()
+        self.client.post('/admin/assinaturas/nova', data={'name': 'Ops', 'html': f'<img src="data:image/png;base64,{image}">'})
+        signature = db.one("SELECT id FROM signatures WHERE name = 'Ops'")
+        # A imagem abre sem login (vai no HTML do NS)
+        with self.client.session_transaction() as session:
+            session.clear()
+        response = self.client.get(f"/assinatura/{signature['id']}/0")
+        self.assertEqual((response.status_code, response.mimetype, response.data), (200, 'image/png', png()))
+        self.assertEqual(self.client.get(f"/assinatura/{signature['id']}/1").status_code, 404)
+
+        self.login(ADMIN)
+        self.client.post('/admin/agentes', data={'name': 'velho'})
+        self.client.post('/admin/agentes', data={'name': 'outro'})
+        agent = db.one("SELECT id, token_hash FROM agents WHERE name = 'velho'")
+        page = self.client.post(f"/admin/agentes/{agent['id']}/nome", data={'name': 'outro'},
+                                follow_redirects=True).get_data(as_text=True)
+        self.assertIn('Já existe um agente com esse nome', page)
+        self.client.post(f"/admin/agentes/{agent['id']}/nome", data={'name': 'novo.nome'})
+        self.assertEqual(db.one('SELECT name, token_hash FROM agents WHERE id = %s', (agent['id'],)),
+                         {'name': 'novo.nome', 'token_hash': agent['token_hash']})
 
 
 def run_row(run_id):

@@ -33,6 +33,7 @@
                             <label class="field"><span class="label">ID do tópico (opcional)</span><input name="topic_id" placeholder="42"></label>
                             {% else %}
                             <label class="field"><span class="label">E-mail</span><input type="email" name="to" required></label>
+                            <label class="field"><span class="label">Assinatura</span><select name="signature_id"><option value="">Sem assinatura</option>{% for s in signatures %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></label>
                             {% endif %}
                             <div class="form-actions"><button type="submit" class="btn btn-outline btn-sm">Enviar teste</button></div>
                         </form>

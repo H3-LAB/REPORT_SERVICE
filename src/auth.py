@@ -16,7 +16,8 @@ bp = Blueprint('auth', __name__)
 oauth = OAuth()
 
 # A API dos agentes autentica-se com o token do agente, não com o Keycloak
-PUBLIC_ENDPOINTS = {'health', 'static', 'auth.login', 'auth.callback', 'agent_api.claim', 'agent_api.result'}
+PUBLIC_ENDPOINTS = {'health', 'static', 'auth.login', 'auth.callback', 'agent_api.claim', 'agent_api.result',
+                    'signature_image'}
 
 
 def _normalize(group):

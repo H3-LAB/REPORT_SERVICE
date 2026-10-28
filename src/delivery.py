@@ -1,9 +1,13 @@
 """Envio do report pelos canais: SMTP, NS (serviço de notificações da Multicert, SOAP) e Telegram."""
 
 import base64
+import itertools
+import os
+import re
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
+from html import unescape
 from xml.sax.saxutils import escape
 
 import requests
@@ -27,11 +31,37 @@ CHANNEL_FIELDS = {
            ('client_name', 'ClientName', 'text', True), ('template_id', 'TemplateID', 'text', True),
            ('sign_message', 'Assinar e-mail (SignMessage)', 'checkbox', False),
            ('high_priority', 'Prioridade alta (HighPriority)', 'checkbox', False),
+           ('html_body', 'Mensagem em HTML (assinaturas; imagens por URL, PUBLIC_URL)', 'checkbox', False),
            ('verify_tls', 'Verificar certificado TLS', 'checkbox', False)],
     'telegram': [('api_url', 'URL da API', 'url', True), ('proxy', 'Proxy (opcional)', 'url', False)],
 }
 # Segredo de cada tipo (cifrado, nunca devolvido ao browser)
 CHANNEL_SECRET = {'smtp': 'Password (opcional)', 'ns': None, 'telegram': 'Token do bot'}
+
+# Endereço da app visto pelos destinatários (com o prefixo): as imagens da assinatura no HTML do NS
+PUBLIC_URL = os.getenv('PUBLIC_URL', '').rstrip('/')
+EMAIL_FONT = 'font-family:Arial,sans-serif;font-size:14px'
+DATA_IMAGE = re.compile(r'''src=(["'])data:(image/(?:png|jpeg|gif));base64,([A-Za-z0-9+/=\s]+)\1''')
+
+
+def signature_images(html):
+    """Imagens embebidas (data:) da assinatura, ``(mime, bytes)`` pela ordem em que aparecem."""
+    return [(m[2], base64.b64decode(m[3])) for m in DATA_IMAGE.finditer(html)]
+
+
+def html_body(message, signature, image_src):
+    """Mensagem em HTML seguida da assinatura; ``image_src(n, mime, data)`` dá o src de cada imagem."""
+    counter = itertools.count()
+    html = DATA_IMAGE.sub(lambda m: f'src="{image_src(next(counter), m[2], base64.b64decode(m[3]))}"',
+                          signature['html']) if signature else ''
+    text = escape(message or 'Report em anexo.').replace('\n', '<br>\n')
+    return f'<div style="{EMAIL_FONT}">{text}' + (f'<br><br>\n{html}' if html else '') + '</div>'
+
+
+def html_text(html):
+    """Versão em texto da assinatura (a parte text/plain do e-mail)."""
+    text = unescape(re.sub(r'<[^>]+>', ' ', re.sub(r'(?i)<br\s*/?>|</(?:p|div|tr|h\d)>', '\n', html)))
+    return '\n'.join(line for line in (' '.join(line.split()) for line in text.splitlines()) if line)
 
 
 def recipients_text(kind, target):
@@ -42,15 +72,16 @@ def recipients_text(kind, target):
     return ', '.join(target.get('to', [])) + cc
 
 
-def send(channel, target, subject, message, file_name, mime, data):
-    """Envia o ficheiro; devolve uma descrição curta para o log da execução."""
+def send(channel, target, subject, message, file_name, mime, data, signature=None):
+    """Envia o ficheiro; devolve uma descrição curta para o log da execução. ``signature``: linha de
+    ``signatures`` (só nos e-mails)."""
     config = channel['config']
     secret = db.decrypt(channel['secret'])
     try:
         if channel['kind'] == 'smtp':
-            return _smtp(config, secret, target, subject, message, file_name, mime, data)
+            return _smtp(config, secret, target, subject, message, file_name, mime, data, signature)
         if channel['kind'] == 'ns':
-            return _ns(config, target, subject, message, file_name, mime, data)
+            return _ns(config, target, subject, message, file_name, mime, data, signature)
         if channel['kind'] == 'telegram':
             return _telegram(config, secret, target, subject, message, file_name, data)
     except DeliveryError:
@@ -62,7 +93,7 @@ def send(channel, target, subject, message, file_name, mime, data):
     raise DeliveryError(f"Tipo de canal desconhecido: {channel['kind']}")
 
 
-def _smtp(config, password, target, subject, message, file_name, mime, data):
+def _smtp(config, password, target, subject, message, file_name, mime, data, signature=None):
     to, cc = target.get('to', []), target.get('cc', [])
     if not to:
         raise DeliveryError('Sem destinatários.')
@@ -72,7 +103,18 @@ def _smtp(config, password, target, subject, message, file_name, mime, data):
     if cc:
         mail['Cc'] = ', '.join(cc)
     mail['Subject'] = subject
-    mail.set_content(message or 'Report em anexo.')
+    mail.set_content((message or 'Report em anexo.') + (f"\n\n-- \n{html_text(signature['html'])}" if signature else ''))
+    if signature:
+        # HTML com as imagens da assinatura como partes inline (cid), que todos os clientes mostram
+        images = []
+
+        def cid(n, image_mime, image):
+            images.append((image_mime, image))
+            return f'cid:img{n}@report-service'
+        mail.add_alternative(html_body(message, signature, cid), subtype='html')
+        html_part = mail.get_payload()[1]
+        for n, (image_mime, image) in enumerate(images):
+            html_part.add_related(image, *image_mime.split('/'), cid=f'<img{n}@report-service>')
     maintype, subtype = mime.split('/', 1)
     mail.add_attachment(data, maintype=maintype, subtype=subtype, filename=file_name)
     with smtplib.SMTP(config['host'], int(config.get('port') or 25), timeout=60) as server:
@@ -115,8 +157,13 @@ def ns_request(config, to, subject, message, file_name, mime, data):
 </soapenv:Envelope>'''
 
 
-def _ns(config, target, subject, message, file_name, mime, data):
+def _ns(config, target, subject, message, file_name, mime, data, signature=None):
     # O MailRequest leva um único To: um pedido por destinatário (cc incluídos)
+    if config.get('html_body'):
+        # O NS não tem anexos inline: as imagens vão por URL da app (sem PUBLIC_URL ficam em data:)
+        message = html_body(message, signature, lambda n, image_mime, image: (
+            f"{PUBLIC_URL}/assinatura/{signature['id']}/{n}" if PUBLIC_URL
+            else f'data:{image_mime};base64,{base64.b64encode(image).decode()}'))
     addresses = target.get('to', []) + target.get('cc', [])
     if not addresses:
         raise DeliveryError('Sem destinatários.')

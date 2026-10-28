@@ -37,7 +37,11 @@ CA_BUNDLE=</pre>
                             <tbody>
                             {% for a in agents %}
                                 <tr>
-                                    <td><strong>{{ a.name }}</strong>{% if a.version %}<small class="sub">versão {{ a.version }}</small>{% endif %}</td>
+                                    <td><strong>{{ a.name }}</strong>{% if a.version %}<small class="sub">versão {{ a.version }}</small>{% endif %}
+                                        <details class="rename">
+                                            <summary>mudar nome</summary>
+                                            <form method="post" action="{{ url_for('admin.agent_rename', agent_id=a.id) }}" class="rename-form"><input name="name" value="{{ a.name }}" maxlength="60" pattern="[A-Za-z0-9_.\-]{2,60}" required aria-label="Novo nome"><button class="btn btn-primary btn-sm" type="submit">Guardar</button></form>
+                                        </details></td>
                                     <td>{% if a.online %}<span class="pill pill-ok">ligado</span>{% elif a.last_seen_at %}<span class="pill pill-error">desligado</span><small class="sub">visto {{ a.last_seen_at | dt }}</small>{% else %}<span class="pill pill-muted">nunca ligou</span>{% endif %}</td>
                                     <td>{{ a.hostname or '-' }}</td>
                                     <td>{% if a.allow_scripts %}<span class="pill pill-warn">permitidos</span>{% elif a.allow_scripts is not none %}<span class="muted">não</span>{% else %}-{% endif %}</td>

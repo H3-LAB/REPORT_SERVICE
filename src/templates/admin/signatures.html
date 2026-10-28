@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Assinaturas{% endblock %}
+{% block content %}
+            <section>
+                <div class="page-header page-header-actions">
+                    <div><h1>Assinaturas</h1><p>Vão no fim da mensagem dos e-mails, com as imagens embebidas. Cada report escolhe a sua.</p></div>
+                    <a class="btn btn-primary btn-sm" href="{{ url_for('admin.signature_form') }}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova assinatura</a>
+                </div>
+                <section class="card">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Nome</th><th>Assinatura</th><th>Reports</th><th></th></tr></thead>
+                            <tbody>
+                            {% for s in signatures %}
+                                <tr>
+                                    <td><a href="{{ url_for('admin.signature_form', signature_id=s.id) }}"><strong>{{ s.name }}</strong></a><small class="sub">alterada {{ s.updated_at | dt }}</small></td>
+                                    <td><iframe class="sig-preview" sandbox srcdoc="<body style='margin:8px;{{ email_font }}'>{{ s.html }}</body>" title="{{ s.name }}" loading="lazy"></iframe></td>
+                                    <td>{{ s.reports }}</td>
+                                    <td><div class="row-actions"><a class="btn btn-outline btn-sm" href="{{ url_for('admin.signature_form', signature_id=s.id) }}">Editar</a></div></td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="4" class="empty">Nenhuma assinatura.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+{% endblock %}
