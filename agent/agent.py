@@ -6,6 +6,7 @@ destinatários é feito pela app.
     REPORT_SERVICE_URL=https://report-service.exemplo AGENT_TOKEN=rta_... python agent.py
 """
 
+import contextlib
 import csv
 import io
 import json
@@ -50,6 +51,73 @@ class Log(list):
     def add(self, message, level='info'):
         self.append({'time': datetime.now().strftime('%H:%M:%S'), 'level': level, 'message': str(message)[:2000]})
         logger.log(logging.WARNING if level in ('warn', 'error') else logging.INFO, message)
+
+
+# ---------- Túnel SSH ----------
+
+SSH_TUNNEL_WAIT = 20  # segundos até a porta local do túnel abrir
+SSH_KEY_TYPE = re.compile(r'(ssh|ecdsa|sk)-\S+')
+
+
+def host_keys(text):
+    """Linhas de known_hosts (com qualquer nome, até em hash) ou ``.pub`` do servidor → ``tunnel <tipo> <chave>``,
+    para usar com ``HostKeyAlias=tunnel``: só a chave conta, não o nome com que foi copiada."""
+    keys = []
+    for line in text.splitlines():
+        fields = line.split()
+        found = next((i for i, field in enumerate(fields[:-1]) if SSH_KEY_TYPE.fullmatch(field)), None)
+        if found is not None:
+            keys.append(f'tunnel {fields[found]} {fields[found + 1]}')
+    return '\n'.join(keys) + '\n'
+
+
+@contextlib.contextmanager
+def ssh_tunnel(info, log):
+    """Abre ``ssh -L`` para a base da ligação só durante o job e devolve a ligação a apontar para o túnel.
+    Sem ``ssh`` na ligação, devolve-a tal como está. A chave e o known_hosts ficam num diretório temporário."""
+    ssh = info.get('ssh')
+    if not ssh:
+        yield info
+        return
+    with tempfile.TemporaryDirectory(prefix='tunnel-') as work:
+        key, known_hosts = os.path.join(work, 'key'), os.path.join(work, 'known_hosts')
+        for path, text in ((key, ssh['key']), (known_hosts, host_keys(ssh['known_hosts']))):
+            with open(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600), 'w') as f:
+                f.write(text)
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        command = ['ssh', '-N', '-F', '/dev/null', '-i', key, '-p', str(ssh['port']),
+                   '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-o', 'LogLevel=ERROR',
+                   '-o', f'UserKnownHostsFile={known_hosts}', '-o', 'HostKeyAlias=tunnel',
+                   '-o', 'StrictHostKeyChecking=yes',
+                   '-o', 'ExitOnForwardFailure=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30',
+                   '-L', f"127.0.0.1:{port}:{info['host']}:{info['port']}", f"{ssh['user']}@{ssh['host']}"]
+        log.add(f"Túnel SSH {ssh['user']}@{ssh['host']}:{ssh['port']} para {info['host']}:{info['port']}")
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + SSH_TUNNEL_WAIT
+            while True:
+                if process.poll() is not None:
+                    error = process.stderr.read().strip()[-500:] or f'código {process.returncode}'
+                    raise RuntimeError(f'O túnel SSH falhou: {error}')
+                try:
+                    socket.create_connection(('127.0.0.1', port), timeout=1).close()
+                    break
+                except OSError:
+                    if time.monotonic() > deadline:
+                        raise RuntimeError(f'O túnel SSH não abriu em {SSH_TUNNEL_WAIT} s.')
+                    time.sleep(0.2)
+            yield {**info, 'host': '127.0.0.1', 'port': port}
+        finally:
+            process.terminate()
+            try:
+                process.wait(5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            log.add('Túnel SSH fechado')
 
 
 # ---------- SQL ----------
@@ -146,19 +214,19 @@ def sql_job(job, log):
     tz = ZoneInfo(job['timezone'])
     period = job['period'] and {k: datetime.fromisoformat(v) for k, v in job['period'].items()}
     sheets, connections = [], {}
-    try:
+    # Fecha as ligações e depois os túneis, também em erro
+    with contextlib.ExitStack() as stack:
         for item in job['queries']:
             info = item['connection']
             if info['name'] not in connections:
                 log.add(f"Ligação {info['name']} ({info['username']}@{info['host']}:{info['port']}/{info['database']})")
-                connections[info['name']] = connect(info)
+                conn = connect(stack.enter_context(ssh_tunnel(info, log)))
+                stack.callback(conn.close)
+                connections[info['name']] = conn
             started = time.monotonic()
             columns, rows = run_query(connections[info['name']], item['query'], period)
             log.add(f"Folha \"{item['sheet']}\": {len(rows)} linhas em {time.monotonic() - started:.1f} s", 'ok')
             sheets.append((item['sheet'], columns, rows))
-    finally:
-        for conn in connections.values():
-            conn.close()
     stem = job['file_stem']
     if job['output'] == 'csv_zip':
         return stem + '.zip', zip_files([(f'{name}.csv', build_csv(c, r, tz)) for name, c, r in sheets])
@@ -174,7 +242,7 @@ def env_name(name):
     return re.sub(r'\W', '_', name).upper()
 
 
-def script_env(job, out_dir):
+def script_env(job, out_dir, connections):
     # Ambiente limpo: o script não vê o AGENT_TOKEN nem as outras variáveis do agente
     env = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL', 'TZ', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY',
                                             'https_proxy', 'http_proxy', 'no_proxy') if key in os.environ}
@@ -182,7 +250,7 @@ def script_env(job, out_dir):
                REPORT_FROM=(job['period'] or {}).get('from', ''), REPORT_TO=(job['period'] or {}).get('to', ''),
                REPORT_TIMEZONE=job['timezone'],
                PYTHONUNBUFFERED='1')
-    for info in job.get('connections', []):
+    for info in connections:
         prefix = f"DB_{env_name(info['name'])}_"
         env.update({prefix + 'HOST': info['host'], prefix + 'PORT': str(info['port']), prefix + 'NAME': info['database'],
                     prefix + 'USER': info['username'], prefix + 'PASSWORD': info['password'],
@@ -204,11 +272,14 @@ def script_job(job, log):
             f.write(job['script']['code'])
         command = [sys.executable, path] if lang == 'python' else ['bash', path]
         log.add(f'Script {lang} (limite {SCRIPT_TIMEOUT} s)')
-        try:
-            done = subprocess.run(command, cwd=work, env=script_env(job, out_dir), capture_output=True, text=True,
-                                  timeout=SCRIPT_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f'O script passou do limite de {SCRIPT_TIMEOUT} s.')
+        # Os túneis SSH das ligações ficam abertos só enquanto o script corre
+        with contextlib.ExitStack() as stack:
+            connections = [stack.enter_context(ssh_tunnel(info, log)) for info in job.get('connections', [])]
+            try:
+                done = subprocess.run(command, cwd=work, env=script_env(job, out_dir, connections), capture_output=True,
+                                      text=True, timeout=SCRIPT_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(f'O script passou do limite de {SCRIPT_TIMEOUT} s.')
         for line in done.stdout.splitlines()[-200:]:
             log.add(line)
         for line in done.stderr.splitlines()[-100:]:

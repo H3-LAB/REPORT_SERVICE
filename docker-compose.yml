@@ -15,7 +15,7 @@ services:
       retries: 6
 
   web:
-    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.6}
+    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.7}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -27,7 +27,7 @@ services:
         condition: service_healthy
 
   scheduler:
-    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.6}
+    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.7}
     restart: unless-stopped
     command: ["python", "scheduler.py"]
     env_file: .env
@@ -40,7 +40,7 @@ services:
   # Porta só para os agentes, com HTTPS e sem passar pelo nginx: só responde à API dos agentes.
   # Precisa de certs/server.crt e certs/server.key (ver README).
   agent-api:
-    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.6}
+    image: ghcr.io/h3-lab/report-service:${REPORT_SERVICE_VERSION:-1.1.7}
     restart: unless-stopped
     command: ["gunicorn", "--bind", "0.0.0.0:10050", "--certfile", "/certs/server.crt", "--keyfile", "/certs/server.key",
               "--workers", "2", "--timeout", "300", "--access-logfile", "-", "app:app"]

@@ -24,6 +24,19 @@
                         <label class="field"><span class="label">Utilizador</span><input name="username" value="{{ connection.username or '' }}" required autocomplete="off"></label>
                         <label class="field"><span class="label">Password</span><input type="password" name="password" placeholder="{{ 'Guardada. Deixe vazio para manter.' if connection.id else '' }}" autocomplete="new-password"></label>
                     </div>
+                    <fieldset class="ssh-fieldset">
+                        <legend>Túnel SSH (opcional)</legend>
+                        <p class="muted">Para bases a que o agente só chega por um servidor intermédio. O agente abre o túnel no início de cada execução e fecha-o no fim. Com túnel, o host e a porta acima são os da base de dados vistos a partir do servidor SSH. Deixe o host SSH vazio para ligar diretamente.</p>
+                        <div class="field-row-2">
+                            <label class="field"><span class="label">Host SSH</span><input name="ssh_host" value="{{ connection.ssh_host or '' }}" placeholder="backup-droplet.exemplo.com" maxlength="253"></label>
+                            <label class="field"><span class="label">Porta SSH</span><input type="number" name="ssh_port" value="{{ connection.ssh_port or 22 }}" min="1" max="65535"></label>
+                        </div>
+                        <label class="field"><span class="label">Utilizador SSH</span><input name="ssh_user" value="{{ connection.ssh_user or '' }}" maxlength="64" autocomplete="off"></label>
+                        <label class="field"><span class="label">Chave privada</span><textarea name="ssh_key" rows="4" class="mono" spellcheck="false" placeholder="{{ 'Guardada. Deixe vazio para manter.' if connection.ssh_key else '-----BEGIN OPENSSH PRIVATE KEY-----' }}"></textarea>
+                            <small>Fica cifrada e não volta a ser mostrada. Sem passphrase.</small></label>
+                        <label class="field"><span class="label">Chave pública do servidor SSH (known_hosts)</span><textarea name="ssh_known_hosts" rows="3" class="mono" spellcheck="false" placeholder="backup-droplet.exemplo.com ssh-ed25519 AAAA…">{{ connection.ssh_known_hosts or '' }}</textarea>
+                            <small>As linhas do servidor no <code>~/.ssh/known_hosts</code> de quem já lá liga (<code>ssh-keygen -F backup-droplet</code>), ou <code>ssh-keyscan -p &lt;porta&gt; &lt;host&gt;</code>. Conta só a chave, não o nome. O agente recusa o servidor se a chave não bater.</small></label>
+                    </fieldset>
                     <p class="muted">Use um utilizador só de leitura. O agente abre a ligação em modo só de leitura, mas o utilizador da base de dados é a proteção que conta.</p>
                     <div class="form-actions"><button type="submit" class="btn btn-primary btn-sm">Guardar</button></div>
                 </form>

@@ -34,6 +34,7 @@ with db.connect() as conn:
     conn.execute('DROP SCHEMA public CASCADE; CREATE SCHEMA public')
 
 import app as reporting  # noqa: E402
+import agents  # noqa: E402
 import delivery  # noqa: E402
 import runner  # noqa: E402
 from periods import next_run, period_range  # noqa: E402
@@ -437,6 +438,30 @@ class WebTest(unittest.TestCase):
         self.client.post('/admin/logos', data={'name': 'Vermelho', 'file': (io.BytesIO(png()), 'x.png')},
                          content_type='multipart/form-data')
         self.assertEqual(db.one("SELECT mime FROM logos WHERE name = 'Vermelho'")['mime'], 'image/png')
+
+    def test_connection_ssh_tunnel(self):
+        self.login(ADMIN)
+        self.client.post('/admin/agentes', data={'name': 'tunel'})
+        agent_id = db.one("SELECT id FROM agents WHERE name = 'tunel'")['id']
+        base = {'name': 'signstash', 'agent_id': agent_id, 'host': 'db.interno', 'port': '25060', 'database': 'd',
+                'username': 'u', 'password': 'p', 'ssh_host': 'salto.exemplo', 'ssh_port': '22', 'ssh_user': 'root',
+                'ssh_known_hosts': 'salto.exemplo ssh-ed25519 AAAA'}
+        key = '-----BEGIN OPENSSH PRIVATE KEY-----\r\nabc\r\n-----END OPENSSH PRIVATE KEY-----'
+        # O host SSH vai como argumento do ssh: nada que comece por "-"
+        self.client.post('/admin/ligacoes/nova', data={**base, 'ssh_key': key, 'ssh_host': '-oProxyCommand=x'})
+        self.assertIsNone(db.one("SELECT 1 FROM db_connections WHERE name = 'signstash'"))
+        self.client.post('/admin/ligacoes/nova', data={**base, 'ssh_key': key})
+        row = db.one("SELECT * FROM db_connections WHERE name = 'signstash'")
+        self.assertNotIn('PRIVATE', row['ssh_key'])
+        ssh = agents.connection_payload(row)['ssh']
+        self.assertEqual(ssh, {'host': 'salto.exemplo', 'port': 22, 'user': 'root', 'known_hosts': 'salto.exemplo ssh-ed25519 AAAA',
+                               'key': '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n'})
+        # Chave vazia ao editar: mantém a guardada; host SSH vazio: tira o túnel
+        self.client.post(f"/admin/ligacoes/{row['id']}", data={**base, 'ssh_port': '2222'})
+        self.assertEqual(db.one('SELECT ssh_port, ssh_key FROM db_connections WHERE id = %s', (row['id'],)),
+                         {'ssh_port': 2222, 'ssh_key': row['ssh_key']})
+        self.client.post(f"/admin/ligacoes/{row['id']}", data={**base, 'ssh_host': ''})
+        self.assertIsNone(agents.connection_payload(db.one('SELECT * FROM db_connections WHERE id = %s', (row['id'],)))['ssh'])
 
     def test_signature_and_agent_rename(self):
         self.login(ADMIN)

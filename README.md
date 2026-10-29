@@ -40,6 +40,7 @@ Para reports que leem bases de dados a que a app não chega: um **agente** corre
    ```
    `docker compose up -d`. Em Agentes passa a "ligado".
 3. **Administração → Ligações BD**: host, porta, base, utilizador e password (cifrada), e o agente que lá chega. Use utilizadores só de leitura; o agente abre as transações em `READ ONLY`.
+   - **Túnel SSH (opcional)**, para bases a que o agente só chega por um servidor intermédio: host, porta e utilizador SSH, chave privada (cifrada, sem passphrase) e a chave pública do servidor (linha do `known_hosts` ou `ssh-keyscan`; conta só a chave, não o nome). O agente abre `ssh -L` numa porta local no início de cada execução e fecha-o no fim, também em erro; recusa o servidor se a chave não bater. Com túnel, o host e a porta da ligação são os da base vistos a partir do servidor SSH. Nos scripts, `DB_<NOME>_HOST/PORT/DSN` já apontam para o túnel.
 4. **Novo report**, tipo:
    - **Consultas SQL**: uma folha do Excel (ou CSV) por consulta; as colunas da query são o cabeçalho (`AS "NOME"`). O período entra com `:from` e `:to` (exclusivo): `WHERE criado >= :from AND criado < :to`. Formato `.xlsx`, `.xlsx` num ZIP, ou ZIP de CSV (`;`, UTF-8).
    - **Script** (Python 3 ou bash): só corre em agentes com `ALLOW_SCRIPTS=true`. Escreve o ficheiro em `$REPORT_OUTPUT_DIR` (vários vão num ZIP); recebe `REPORT_FROM`, `REPORT_TO`, `REPORT_FILE_STEM` e, por ligação escolhida, `DB_<NOME>_HOST/_PORT/_NAME/_USER/_PASSWORD/_DSN`. Tem `psycopg`, `psycopg2`, `openpyxl` e `requests`. O ambiente do script não tem o token do agente.

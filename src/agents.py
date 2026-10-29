@@ -47,8 +47,11 @@ def current_agent():
 
 
 def connection_payload(row):
+    ssh = {'host': row['ssh_host'], 'port': row['ssh_port'], 'user': row['ssh_user'], 'key': db.decrypt(row['ssh_key']),
+           'known_hosts': row['ssh_known_hosts']} if row['ssh_host'] else None
     return {'name': row['name'], 'kind': row['kind'], 'host': row['host'], 'port': row['port'],
-            'database': row['database'], 'username': row['username'], 'password': db.decrypt(row['password'])}
+            'database': row['database'], 'username': row['username'], 'password': db.decrypt(row['password']),
+            'ssh': ssh}
 
 
 def job_payload(run, report):

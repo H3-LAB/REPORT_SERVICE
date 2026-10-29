@@ -8,6 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AGENT_VERSION=${VERSION} \
     TZ=Europe/Lisbon
 
+# ssh: túneis SSH das ligações, abertos só durante cada execução
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /agent
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

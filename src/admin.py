@@ -30,6 +30,9 @@ HEX_COLOR = re.compile(r'#[0-9a-f]{6}')
 URL = re.compile(r'https?://\S+')
 LOGO_MAX_BYTES = 1024 * 1024
 AGENT_NAME = re.compile(r'[A-Za-z0-9_.-]{2,60}')
+# Vão como argumentos do ssh no agente: nada que comece por "-" nem espaços
+SSH_HOST = re.compile(r'[A-Za-z0-9][A-Za-z0-9.-]{0,252}')
+SSH_USER = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}')
 # Cabe no MAX_CONTENT_LENGTH (2 MB) do formulário, com as imagens em base64
 SIGNATURE_MAX_CHARS = 1_800_000
 
@@ -251,6 +254,7 @@ def connection_form(connection_id=None):
     password = form.get('password', '')
     if password:
         values['password'] = db.encrypt(password)
+    errors += _ssh_values(form, existing, values)
     connection = {**(existing or {}), **values}
     if errors:
         for error in errors:
@@ -270,9 +274,40 @@ def connection_form(connection_id=None):
         return render_template('admin/connection_form.html', connection=connection, **context), 400
     db.audit(username(), 'ligação guardada', values['name'],
              f"{values['username']}@{values['host']}:{values['port']}/{values['database']}"
-             + (' · password alterada' if password else ''))
+             + (f" · túnel SSH {values['ssh_user']}@{values['ssh_host']}:{values['ssh_port']}" if values['ssh_host'] else '')
+             + (' · password alterada' if password else '') + (' · chave SSH alterada' if form.get('ssh_key', '').strip() else ''))
     flash('Ligação guardada.')
     return redirect(url_for('admin.connection_form', connection_id=connection_id))
+
+
+def _ssh_values(form, existing, values):
+    """Túnel SSH opcional (host vazio = sem túnel): junta as colunas ssh_* a ``values``; devolve os erros."""
+    host = form.get('ssh_host', '').strip()
+    if not host:
+        values.update(ssh_host=None, ssh_port=22, ssh_user=None, ssh_key=None, ssh_known_hosts=None)
+        return []
+    key = form.get('ssh_key', '').strip().replace('\r\n', '\n')
+    known_hosts = '\n'.join(line.strip() for line in form.get('ssh_known_hosts', '').splitlines() if line.strip())
+    values.update(ssh_host=host[:253], ssh_user=form.get('ssh_user', '').strip()[:64], ssh_known_hosts=known_hosts)
+    errors = []
+    try:
+        values['ssh_port'] = int(form.get('ssh_port') or 22)
+        assert 1 <= values['ssh_port'] <= 65535
+    except (ValueError, AssertionError):
+        errors.append('Túnel SSH: porta inválida.')
+    if not SSH_HOST.fullmatch(host) or not SSH_USER.fullmatch(values['ssh_user']):
+        errors.append('Túnel SSH: host e utilizador sem espaços e sem começar por "-".')
+    if key:
+        if 'PRIVATE KEY-----' not in key:
+            errors.append('Túnel SSH: a chave privada começa por -----BEGIN … PRIVATE KEY-----.')
+        values['ssh_key'] = db.encrypt(key + '\n')
+    elif not (existing and existing['ssh_key']):
+        errors.append('Túnel SSH: cole a chave privada.')
+    if not known_hosts:
+        errors.append('Túnel SSH: cole a chave pública do servidor SSH (known_hosts).')
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', values['host']):
+        errors.append('Com túnel SSH, o host da base de dados é um nome ou IP (sem espaços nem ":").')
+    return errors
 
 
 @bp.post('/ligacoes/<int:connection_id>/apagar')
