@@ -47,8 +47,10 @@ def current_agent():
 
 
 def connection_payload(row):
+    jump = {'host': row['ssh_jump_host'], 'port': row['ssh_jump_port'], 'user': row['ssh_jump_user'],
+            'key': db.decrypt(row['ssh_jump_key']), 'known_hosts': row['ssh_jump_known_hosts']} if row['ssh_jump_host'] else None
     ssh = {'host': row['ssh_host'], 'port': row['ssh_port'], 'user': row['ssh_user'], 'key': db.decrypt(row['ssh_key']),
-           'known_hosts': row['ssh_known_hosts']} if row['ssh_host'] else None
+           'known_hosts': row['ssh_known_hosts'], 'proxy': row['ssh_proxy'], 'jump': jump} if row['ssh_host'] else None
     return {'name': row['name'], 'kind': row['kind'], 'host': row['host'], 'port': row['port'],
             'database': row['database'], 'username': row['username'], 'password': db.decrypt(row['password']),
             'ssh': ssh}

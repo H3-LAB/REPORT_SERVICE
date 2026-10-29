@@ -1877,3 +1877,16 @@ textarea.mono {
     font-family: ui-monospace, monospace;
     font-size: 0.75rem;
 }
+.ssh-jump {
+    display: grid;
+    gap: 0.75rem;
+}
+.ssh-jump summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+.ssh-jump[open] {
+    border-top: 1px solid hsl(var(--border));
+    padding-top: 0.75rem;
+}

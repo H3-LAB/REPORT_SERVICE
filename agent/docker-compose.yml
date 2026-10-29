@@ -2,7 +2,7 @@
 # Só precisa de HTTPS de saída para o servidor (porta 10050). Configuração no .env ao lado (ver .env.example).
 services:
   agent:
-    image: ghcr.io/h3-lab/report-service-agent:${AGENT_VERSION:-1.1.7}
+    image: ghcr.io/h3-lab/report-service-agent:${AGENT_VERSION:-1.1.8}
     restart: unless-stopped
     env_file: .env
     # report-service.corp.multicert.com só existe para os agentes (não está no DNS): aponta para o IP do servidor.

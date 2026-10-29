@@ -14,7 +14,7 @@
                             {% for c in connections %}
                                 <tr>
                                     <td><a href="{{ url_for('admin.connection_form', connection_id=c.id) }}"><strong>{{ c.name }}</strong></a><small class="sub">PostgreSQL</small></td>
-                                    <td><code>{{ c.username }}@{{ c.host }}:{{ c.port }}/{{ c.database }}</code>{% if c.ssh_host %}<small class="sub">via túnel SSH {{ c.ssh_user }}@{{ c.ssh_host }}:{{ c.ssh_port }}</small>{% endif %}</td>
+                                    <td><code>{{ c.username }}@{{ c.host }}:{{ c.port }}/{{ c.database }}</code>{% if c.ssh_host %}<small class="sub">via túnel SSH {{ c.ssh_user }}@{{ c.ssh_host }}:{{ c.ssh_port }}{% if c.ssh_jump_host %} · bastion {{ c.ssh_jump_host }}{% endif %}{% if c.ssh_proxy %} · proxy {{ c.ssh_proxy }}{% endif %}</small>{% endif %}</td>
                                     <td>{{ c.agent_name }}</td>
                                     <td>{{ c.reports }}</td>
                                     <td><a class="btn btn-outline btn-sm" href="{{ url_for('admin.connection_form', connection_id=c.id) }}">Editar</a></td>

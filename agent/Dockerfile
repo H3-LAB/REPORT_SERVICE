@@ -8,8 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AGENT_VERSION=${VERSION} \
     TZ=Europe/Lisbon
 
-# ssh: túneis SSH das ligações, abertos só durante cada execução
-RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
+# ssh: túneis SSH das ligações, abertos só durante cada execução; nc (OpenBSD): saída por proxy HTTP (CONNECT)
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /agent
 COPY requirements.txt .

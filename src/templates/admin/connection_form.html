@@ -36,6 +36,19 @@
                             <small>Fica cifrada e não volta a ser mostrada. Sem passphrase.</small></label>
                         <label class="field"><span class="label">Chave pública do servidor SSH (known_hosts)</span><textarea name="ssh_known_hosts" rows="3" class="mono" spellcheck="false" placeholder="backup-droplet.exemplo.com ssh-ed25519 AAAA…">{{ connection.ssh_known_hosts or '' }}</textarea>
                             <small>As linhas do servidor no <code>~/.ssh/known_hosts</code> de quem já lá liga (<code>ssh-keygen -F backup-droplet</code>), ou <code>ssh-keyscan -p &lt;porta&gt; &lt;host&gt;</code>. Conta só a chave, não o nome. O agente recusa o servidor se a chave não bater.</small></label>
+                        <label class="field"><span class="label">Proxy HTTP (opcional)</span><input name="ssh_proxy" value="{{ connection.ssh_proxy or '' }}" placeholder="proxy.multicert.prod:3128" maxlength="260">
+                            <small>Se o SSH tem de sair por um proxy (HTTP CONNECT, como o <code>proxytunnel</code>). Com bastion, é usado para chegar ao bastion.</small></label>
+                        <details class="ssh-jump"{% if connection.ssh_jump_host %} open{% endif %}>
+                            <summary>Bastion / ProxyJump (opcional)</summary>
+                            <p class="muted">O agente liga-se primeiro a este servidor e daí ao servidor SSH acima.</p>
+                            <div class="field-row-2">
+                                <label class="field"><span class="label">Host do bastion</span><input name="ssh_jump_host" value="{{ connection.ssh_jump_host or '' }}" maxlength="253"></label>
+                                <label class="field"><span class="label">Porta</span><input type="number" name="ssh_jump_port" value="{{ connection.ssh_jump_port or 22 }}" min="1" max="65535"></label>
+                            </div>
+                            <label class="field"><span class="label">Utilizador</span><input name="ssh_jump_user" value="{{ connection.ssh_jump_user or '' }}" maxlength="64" autocomplete="off"></label>
+                            <label class="field"><span class="label">Chave privada (opcional)</span><textarea name="ssh_jump_key" rows="3" class="mono" spellcheck="false" placeholder="{{ 'Guardada. Deixe vazio para manter.' if connection.ssh_jump_key else 'Vazio: a mesma chave do túnel' }}"></textarea></label>
+                            <label class="field"><span class="label">Chave pública do bastion (known_hosts)</span><textarea name="ssh_jump_known_hosts" rows="2" class="mono" spellcheck="false">{{ connection.ssh_jump_known_hosts or '' }}</textarea></label>
+                        </details>
                     </fieldset>
                     <p class="muted">Use um utilizador só de leitura. O agente abre a ligação em modo só de leitura, mas o utilizador da base de dados é a proteção que conta.</p>
                     <div class="form-actions"><button type="submit" class="btn btn-primary btn-sm">Guardar</button></div>

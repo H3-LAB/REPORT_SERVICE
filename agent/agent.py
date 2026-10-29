@@ -55,20 +55,51 @@ class Log(list):
 
 # ---------- Túnel SSH ----------
 
-SSH_TUNNEL_WAIT = 20  # segundos até a porta local do túnel abrir
+SSH_TUNNEL_WAIT = 45  # segundos até a porta local do túnel abrir (com proxy e bastion demora mais)
 SSH_KEY_TYPE = re.compile(r'(ssh|ecdsa|sk)-\S+')
 
 
-def host_keys(text):
-    """Linhas de known_hosts (com qualquer nome, até em hash) ou ``.pub`` do servidor → ``tunnel <tipo> <chave>``,
-    para usar com ``HostKeyAlias=tunnel``: só a chave conta, não o nome com que foi copiada."""
+def host_keys(text, alias):
+    """Linhas de known_hosts (com qualquer nome, até em hash) ou ``.pub`` do servidor → ``<alias> <tipo> <chave>``,
+    para usar com ``HostKeyAlias``: só a chave conta, não o nome com que foi copiada."""
     keys = []
     for line in text.splitlines():
         fields = line.split()
         found = next((i for i, field in enumerate(fields[:-1]) if SSH_KEY_TYPE.fullmatch(field)), None)
         if found is not None:
-            keys.append(f'tunnel {fields[found]} {fields[found + 1]}')
-    return '\n'.join(keys) + '\n'
+            keys.append(f'{alias} {fields[found]} {fields[found + 1]}\n')
+    return ''.join(keys)
+
+
+def ssh_config(ssh, work):
+    """``ssh_config`` temporário: o servidor do túnel (``tunnel``), o bastion opcional (``jump``, ProxyJump) e o
+    proxy HTTP opcional (CONNECT, no primeiro salto). Escreve as chaves em ``work``; devolve o caminho do config."""
+    def write(name, text):
+        path = os.path.join(work, name)
+        with open(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600), 'w') as f:
+            f.write(text)
+        return path
+
+    jump = ssh.get('jump')
+    hops = [('tunnel', ssh)] + ([('jump', {**jump, 'key': jump.get('key') or ssh['key']})] if jump else [])
+    known_hosts = write('known_hosts', ''.join(host_keys(hop['known_hosts'], alias) for alias, hop in hops))
+    lines = ['Host *', '  IdentitiesOnly yes', '  BatchMode yes', '  LogLevel ERROR', '  StrictHostKeyChecking yes',
+             f'  UserKnownHostsFile {known_hosts}', '  ConnectTimeout 15', '  ServerAliveInterval 30']
+    for alias, hop in hops:
+        lines += [f'Host {alias}', f"  HostName {hop['host']}", f"  Port {hop['port']}", f"  User {hop['user']}",
+                  f"  IdentityFile {write(alias + '.key', hop['key'])}", f'  HostKeyAlias {alias}']
+        if alias != hops[-1][0]:  # o túnel, com bastion: chega lá pelo bastion
+            lines.append('  ProxyJump jump')
+        elif ssh.get('proxy'):  # o primeiro salto: pelo proxy, se houver
+            lines.append(f"  ProxyCommand nc -X connect -x {ssh['proxy']} %h %p")
+    return write('config', '\n'.join(lines) + '\n')
+
+
+def describe_route(ssh):
+    route = [f"proxy {ssh['proxy']}"] if ssh.get('proxy') else []
+    if ssh.get('jump'):
+        route.append(f"bastion {ssh['jump']['user']}@{ssh['jump']['host']}:{ssh['jump']['port']}")
+    return f" (via {', '.join(route)})" if route else ''
 
 
 @contextlib.contextmanager
@@ -80,28 +111,26 @@ def ssh_tunnel(info, log):
         yield info
         return
     with tempfile.TemporaryDirectory(prefix='tunnel-') as work:
-        key, known_hosts = os.path.join(work, 'key'), os.path.join(work, 'known_hosts')
-        for path, text in ((key, ssh['key']), (known_hosts, host_keys(ssh['known_hosts']))):
-            with open(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600), 'w') as f:
-                f.write(text)
+        config = ssh_config(ssh, work)
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
             port = probe.getsockname()[1]
-        command = ['ssh', '-N', '-F', '/dev/null', '-i', key, '-p', str(ssh['port']),
-                   '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-o', 'LogLevel=ERROR',
-                   '-o', f'UserKnownHostsFile={known_hosts}', '-o', 'HostKeyAlias=tunnel',
-                   '-o', 'StrictHostKeyChecking=yes',
-                   '-o', 'ExitOnForwardFailure=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30',
-                   '-L', f"127.0.0.1:{port}:{info['host']}:{info['port']}", f"{ssh['user']}@{ssh['host']}"]
-        log.add(f"Túnel SSH {ssh['user']}@{ssh['host']}:{ssh['port']} para {info['host']}:{info['port']}")
+        command = ['ssh', '-N', '-F', config, '-o', 'ExitOnForwardFailure=yes',
+                   '-L', f"127.0.0.1:{port}:{info['host']}:{info['port']}", 'tunnel']
+        log.add(f"Túnel SSH {ssh['user']}@{ssh['host']}:{ssh['port']}{describe_route(ssh)} "
+                f"para {info['host']}:{info['port']}")
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                    stderr=subprocess.PIPE, text=True)
         try:
             deadline = time.monotonic() + SSH_TUNNEL_WAIT
             while True:
                 if process.poll() is not None:
-                    error = process.stderr.read().strip()[-500:] or f'código {process.returncode}'
-                    raise RuntimeError(f'O túnel SSH falhou: {error}')
+                    error = process.stderr.read().strip()
+                    if 'Host key verification failed' in error:
+                        alias = 'jump' if 'for jump' in error or '[jump]' in error else 'tunnel'
+                        error = (f"a chave do {'bastion' if alias == 'jump' else 'servidor SSH'} não bate com a "
+                                 'configurada na ligação (known_hosts)')
+                    raise RuntimeError(f"O túnel SSH falhou: {error[-500:] or f'código {process.returncode}'}")
                 try:
                     socket.create_connection(('127.0.0.1', port), timeout=1).close()
                     break

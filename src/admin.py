@@ -33,6 +33,9 @@ AGENT_NAME = re.compile(r'[A-Za-z0-9_.-]{2,60}')
 # Vão como argumentos do ssh no agente: nada que comece por "-" nem espaços
 SSH_HOST = re.compile(r'[A-Za-z0-9][A-Za-z0-9.-]{0,252}')
 SSH_USER = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}')
+SSH_PROXY = re.compile(r'[A-Za-z0-9][A-Za-z0-9.-]{0,252}:\d{1,5}')
+SSH_OFF = dict(ssh_host=None, ssh_port=22, ssh_user=None, ssh_key=None, ssh_known_hosts=None, ssh_proxy=None,
+               ssh_jump_host=None, ssh_jump_port=22, ssh_jump_user=None, ssh_jump_key=None, ssh_jump_known_hosts=None)
 # Cabe no MAX_CONTENT_LENGTH (2 MB) do formulário, com as imagens em base64
 SIGNATURE_MAX_CHARS = 1_800_000
 
@@ -275,38 +278,56 @@ def connection_form(connection_id=None):
     db.audit(username(), 'ligação guardada', values['name'],
              f"{values['username']}@{values['host']}:{values['port']}/{values['database']}"
              + (f" · túnel SSH {values['ssh_user']}@{values['ssh_host']}:{values['ssh_port']}" if values['ssh_host'] else '')
-             + (' · password alterada' if password else '') + (' · chave SSH alterada' if form.get('ssh_key', '').strip() else ''))
+             + (f" · proxy {values['ssh_proxy']}" if values['ssh_proxy'] else '')
+             + (f" · bastion {values['ssh_jump_user']}@{values['ssh_jump_host']}" if values['ssh_jump_host'] else '')
+             + (' · password alterada' if password else '') + (' · chave SSH alterada' if form.get('ssh_key', '').strip() or form.get('ssh_jump_key', '').strip() else ''))
     flash('Ligação guardada.')
     return redirect(url_for('admin.connection_form', connection_id=connection_id))
 
 
-def _ssh_values(form, existing, values):
-    """Túnel SSH opcional (host vazio = sem túnel): junta as colunas ssh_* a ``values``; devolve os erros."""
-    host = form.get('ssh_host', '').strip()
-    if not host:
-        values.update(ssh_host=None, ssh_port=22, ssh_user=None, ssh_key=None, ssh_known_hosts=None)
-        return []
-    key = form.get('ssh_key', '').strip().replace('\r\n', '\n')
-    known_hosts = '\n'.join(line.strip() for line in form.get('ssh_known_hosts', '').splitlines() if line.strip())
-    values.update(ssh_host=host[:253], ssh_user=form.get('ssh_user', '').strip()[:64], ssh_known_hosts=known_hosts)
+def _ssh_hop(form, existing, values, prefix, label, key_required):
+    """Um servidor SSH do formulário (o do túnel ou o bastion): host, porta, utilizador, chave e known_hosts."""
+    host, user = form.get(prefix + 'host', '').strip(), form.get(prefix + 'user', '').strip()
+    key = form.get(prefix + 'key', '').strip().replace('\r\n', '\n')
+    known_hosts = '\n'.join(line.strip() for line in form.get(prefix + 'known_hosts', '').splitlines() if line.strip())
+    values.update({prefix + 'host': host[:253], prefix + 'user': user[:64], prefix + 'known_hosts': known_hosts})
     errors = []
     try:
-        values['ssh_port'] = int(form.get('ssh_port') or 22)
-        assert 1 <= values['ssh_port'] <= 65535
+        values[prefix + 'port'] = int(form.get(prefix + 'port') or 22)
+        assert 1 <= values[prefix + 'port'] <= 65535
     except (ValueError, AssertionError):
-        errors.append('Túnel SSH: porta inválida.')
-    if not SSH_HOST.fullmatch(host) or not SSH_USER.fullmatch(values['ssh_user']):
-        errors.append('Túnel SSH: host e utilizador sem espaços e sem começar por "-".')
+        errors.append(f'{label}: porta inválida.')
+    # Vão para o ssh_config do agente: nada que comece por "-" nem espaços
+    if not SSH_HOST.fullmatch(host) or not SSH_USER.fullmatch(user):
+        errors.append(f'{label}: host e utilizador sem espaços e sem começar por "-".')
     if key:
         if 'PRIVATE KEY-----' not in key:
-            errors.append('Túnel SSH: a chave privada começa por -----BEGIN … PRIVATE KEY-----.')
-        values['ssh_key'] = db.encrypt(key + '\n')
-    elif not (existing and existing['ssh_key']):
-        errors.append('Túnel SSH: cole a chave privada.')
+            errors.append(f'{label}: a chave privada começa por -----BEGIN … PRIVATE KEY-----.')
+        values[prefix + 'key'] = db.encrypt(key + '\n')
+    elif key_required and not (existing and existing[prefix + 'key']):
+        errors.append(f'{label}: cole a chave privada.')
     if not known_hosts:
-        errors.append('Túnel SSH: cole a chave pública do servidor SSH (known_hosts).')
+        errors.append(f'{label}: cole a chave pública do servidor (known_hosts).')
+    return errors
+
+
+def _ssh_values(form, existing, values):
+    """Túnel SSH opcional (host vazio = sem túnel), com proxy HTTP e bastion opcionais: junta as colunas ssh_* a
+    ``values``; devolve os erros."""
+    if not form.get('ssh_host', '').strip():
+        values.update(SSH_OFF)
+        return []
+    errors = _ssh_hop(form, existing, values, 'ssh_', 'Túnel SSH', True)
     if not re.fullmatch(r'[A-Za-z0-9._-]+', values['host']):
         errors.append('Com túnel SSH, o host da base de dados é um nome ou IP (sem espaços nem ":").')
+    proxy = form.get('ssh_proxy', '').strip()
+    values['ssh_proxy'] = proxy or None
+    if proxy and not SSH_PROXY.fullmatch(proxy):
+        errors.append('Proxy HTTP: host:porta (ex. proxy.multicert.prod:3128).')
+    if form.get('ssh_jump_host', '').strip():
+        errors += _ssh_hop(form, existing, values, 'ssh_jump_', 'Bastion', False)
+    else:
+        values.update({k: v for k, v in SSH_OFF.items() if k.startswith('ssh_jump_')})
     return errors
 
 

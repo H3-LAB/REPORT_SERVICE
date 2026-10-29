@@ -455,7 +455,16 @@ class WebTest(unittest.TestCase):
         self.assertNotIn('PRIVATE', row['ssh_key'])
         ssh = agents.connection_payload(row)['ssh']
         self.assertEqual(ssh, {'host': 'salto.exemplo', 'port': 22, 'user': 'root', 'known_hosts': 'salto.exemplo ssh-ed25519 AAAA',
-                               'key': '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n'})
+                               'key': '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n',
+                               'proxy': None, 'jump': None})
+        # Proxy HTTP e bastion (sem chave própria: o agente usa a do túnel)
+        self.client.post(f"/admin/ligacoes/{row['id']}", data={**base, 'ssh_proxy': 'proxy.x:3128 -oX', 'ssh_jump_host': 'bastiao'})
+        self.assertIsNone(db.one('SELECT ssh_proxy FROM db_connections WHERE id = %s', (row['id'],))['ssh_proxy'])
+        self.client.post(f"/admin/ligacoes/{row['id']}", data={**base, 'ssh_proxy': 'proxy.x:3128', 'ssh_jump_host': 'bastiao',
+                                                              'ssh_jump_user': 'ops', 'ssh_jump_known_hosts': 'bastiao ssh-ed25519 BBBB'})
+        ssh = agents.connection_payload(db.one('SELECT * FROM db_connections WHERE id = %s', (row['id'],)))['ssh']
+        self.assertEqual((ssh['proxy'], ssh['jump']), ('proxy.x:3128', {'host': 'bastiao', 'port': 22, 'user': 'ops', 'key': '',
+                                                                         'known_hosts': 'bastiao ssh-ed25519 BBBB'}))
         # Chave vazia ao editar: mantém a guardada; host SSH vazio: tira o túnel
         self.client.post(f"/admin/ligacoes/{row['id']}", data={**base, 'ssh_port': '2222'})
         self.assertEqual(db.one('SELECT ssh_port, ssh_key FROM db_connections WHERE id = %s', (row['id'],)),
